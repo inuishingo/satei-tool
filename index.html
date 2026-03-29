@@ -1077,7 +1077,7 @@ async function analyzeAuction() {
       const allImgs = [];
       for (let i=0; i<Math.min(S.aFiles.length,3); i++) {
         setP(50 + 20*i);
-        const imgs = await pdfToImages(S.aFiles[i], 20);
+        const imgs = await pdfToImages(S.aFiles[i], 30);
         allImgs.push(...imgs);
       }
       setP(75);
@@ -1324,7 +1324,6 @@ function applyExtracted(data) {
   const h2 = chiku.match(/平成\s*(\d+)/); if(h2) year = 1988+parseInt(h2[1]);
   const r2 = chiku.match(/令和\s*(\d+)/); if(r2) year = 2018+parseInt(r2[1]);
   const y2 = chiku.match(/(\d{4})/); if(y2&&!year) year = parseInt(y2[1]);
-  // 「経過○年」パターン対応（AIが経過年数で返した場合）
   const keika = chiku.match(/経過\s*(\d+)\s*年/);
   if (year > 1900) {
     const el = document.getElementById('buildAge');

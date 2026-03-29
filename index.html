@@ -1092,8 +1092,8 @@ async function analyzeAuction() {
 {
   "売却基準価額": "円単位の数字のみ（競売の基準となる価格。最も高い価格）",
   "買受可能価額": "円単位の数字のみ（売却基準価額の約80%の価格。入札できる最低価格。「買受申出保証額」「保証額」とは別の項目）",
-  "土地面積": "㎡の数字のみ",
-  "建物面積": "㎡の数字のみ（1階と2階合計）",
+  "土地面積": "㎡の数字のみ（通常50〜500程度。カンマ区切りの大きな数字は金額なので無視）",
+  "建物面積": "㎡の数字のみ（1階と2階の合計。通常30〜300程度）",
   "築年": "昭和○年 または 平成○年 または 令和○年",
   "所在地": "市区町村以降の住所",
   "用途地域": "用途地域名",
@@ -1190,11 +1190,14 @@ function parseAuctionTextFull(text) {
     result['買受可能価額'] = String(Math.round(candidates[0]*0.8));
   }
 
-  // 土地面積
+  // 土地面積（50〜5000㎡の範囲でチェック）
   m = text.match(/地\s*積\s*([0-9]+\.?[0-9]*)\s*(?:平方メートル|㎡|m²)/);
   if (!m) m = text.match(/土地面積[^\d]*([0-9]+\.?[0-9]*)/);
   if (!m) m = text.match(/([0-9]+\.[0-9]+)\s*(?:平方メートル|㎡)/);
-  if (m) result['土地面積'] = m[1];
+  if (m) {
+    const v = parseFloat(m[1]);
+    if (v >= 10 && v <= 5000) result['土地面積'] = m[1];
+  }
 
   // 建物面積（1階＋2階合計）
   const f1 = text.match(/1\s*階\s*([0-9]+\.?[0-9]*)\s*(?:平方メートル|㎡|m²)/);
@@ -1263,8 +1266,17 @@ function applyExtracted(data) {
 
   set('basePrice','売却基準価額',true);
   set('minPrice','買受可能価額',true);
-  set('landArea','土地面積',false);
-  set('buildArea','建物面積',false);
+
+  // 土地面積・建物面積は範囲チェック（10〜5000㎡）
+  const setArea = (id, key) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const v = parseFloat(String(data[key]||'').replace(/[,，\s㎡]/g,''));
+    if (v >= 10 && v <= 5000) { el.value = v; el.classList.add('auto-ok'); }
+  };
+  setArea('landArea','土地面積');
+  setArea('buildArea','建物面積');
+
   set('location','所在地',false);
   set('zoning','用途地域',false);
 

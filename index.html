@@ -1092,8 +1092,8 @@ async function analyzeAuction() {
 {
   "売却基準価額": "円単位の数字のみ（競売の基準となる価格。最も高い価格）",
   "買受可能価額": "円単位の数字のみ（売却基準価額の約80%の価格。入札できる最低価格。「買受申出保証額」「保証額」とは別の項目）",
-  "土地面積": "㎡の数字のみ（通常50〜500程度。カンマ区切りの大きな数字は金額なので無視）",
-  "建物面積": "㎡の数字のみ（1階と2階の合計。通常30〜300程度）",
+  "土地面積": "㎡の数字のみ（物件目録の地積欄に記載。通常小数点付きの数字例：122.94。整数のみの大きな数字は金額なので無視すること）",
+  "建物面積": "㎡の数字のみ（床面積欄の1階＋2階の合計。通常小数点付きの数字例：98.19）",
   "築年": "昭和○年 または 平成○年 または 令和○年",
   "所在地": "市区町村以降の住所",
   "用途地域": "用途地域名",
@@ -1267,12 +1267,16 @@ function applyExtracted(data) {
   set('basePrice','売却基準価額',true);
   set('minPrice','買受可能価額',true);
 
-  // 土地面積・建物面積は範囲チェック（10〜5000㎡）
+  // 土地面積・建物面積は範囲チェック（10〜3000㎡かつ小数点付きを優先）
   const setArea = (id, key) => {
     const el = document.getElementById(id);
     if (!el) return;
-    const v = parseFloat(String(data[key]||'').replace(/[,，\s㎡]/g,''));
-    if (v >= 10 && v <= 5000) { el.value = v; el.classList.add('auto-ok'); }
+    const raw = String(data[key]||'').replace(/[,，\s㎡]/g,'');
+    const v = parseFloat(raw);
+    if (isNaN(v)) return;
+    // 小数点なしの整数で1000以上は金額の可能性が高いので除外
+    if (!raw.includes('.') && v >= 1000) return;
+    if (v >= 10 && v <= 3000) { el.value = v; el.classList.add('auto-ok'); }
   };
   setArea('landArea','土地面積');
   setArea('buildArea','建物面積');

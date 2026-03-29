@@ -1077,7 +1077,7 @@ async function analyzeAuction() {
       const allImgs = [];
       for (let i=0; i<Math.min(S.aFiles.length,3); i++) {
         setP(50 + 20*i);
-        const imgs = await pdfToImages(S.aFiles[i], 6);
+        const imgs = await pdfToImages(S.aFiles[i], 10);
         allImgs.push(...imgs);
       }
       setP(75);
@@ -1105,7 +1105,7 @@ async function analyzeAuction() {
   "買受可能価額": "円単位の数字のみ（売却基準価額の約80%のもの。保証額ではない）",
   "土地面積": "㎡の数字のみ（物件目録の地積欄。小数点付き例：122.94）",
   "建物面積": "㎡の数字のみ（床面積1階＋2階合計。小数点付き例：98.19）",
-  "築年": "昭和○年 または 平成○年 または 令和○年",
+  "築年": "評価書の建物概況欄にある建築年月日(登記記載)から元号+年数を抽出(例:平成9年、昭和52年)。なければ経過年数欄の数字を使い経過○年と返す",
   "所在地": "市区町村以降の住所",
   "用途地域": "用途地域名",
   "備考": "占有・残置物・再建築不可・接道不可など特記事項"
@@ -1217,6 +1217,7 @@ function parseAuctionTextFull(text) {
 
   // 築年（平成・令和・昭和）
   m = text.match(/(?:建築年月日|新築)[^\n]*?((?:昭和|平成|令和)\s*[0-9]+\s*年)/);
+  if (!m) m = text.match(/建築年月日[^\n]*((?:昭和|平成|令和)\s*[0-9]+\s*年)/);
   if (!m) m = text.match(/(平成|令和|昭和)\s*([0-9]+)\s*年\s*[0-9]+\s*月.*?新築/);
   if (!m) m = text.match(/経過\s*年\s*数[^\d]*約\s*([0-9]+)\s*年/);
   if (m) {
@@ -1324,9 +1325,15 @@ function applyExtracted(data) {
   const h2 = chiku.match(/平成\s*(\d+)/); if(h2) year = 1988+parseInt(h2[1]);
   const r2 = chiku.match(/令和\s*(\d+)/); if(r2) year = 2018+parseInt(r2[1]);
   const y2 = chiku.match(/(\d{4})/); if(y2&&!year) year = parseInt(y2[1]);
+  // 「経過○年」パターン対応（AIが経過年数で返した場合）
+  const keika = chiku.match(/経過\s*(\d+)\s*年/);
   if (year > 1900) {
     const el = document.getElementById('buildAge');
     el.value = new Date().getFullYear()-year;
+    el.classList.add('auto-ok');
+  } else if (keika) {
+    const el = document.getElementById('buildAge');
+    el.value = parseInt(keika[1]);
     el.classList.add('auto-ok');
   } else if (data['_buildAge']) {
     const el = document.getElementById('buildAge');

@@ -1,0 +1,2199 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>競売・買取 査定ツール｜HOUSE MARKET</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+#leafletMap { height: 460px; border-radius: 8px; z-index: 1; }
+:root {
+  --bg:#0f1117; --bg2:#181c27; --bg3:#1e2333; --border:#2a3050;
+  --accent:#e8b84b; --accent2:#d4a43a;
+  --text:#e8eaf0; --text2:#8b93b0;
+  --green:#3ecf8e; --red:#f06070; --blue:#4a9eff;
+  --safe:#3ecf8e; --fight:#e8b84b; --challenge:#f06070;
+  --r:8px;
+  --font:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;min-height:100vh;}
+
+header{background:var(--bg2);border-bottom:2px solid var(--accent);padding:12px 24px;display:flex;align-items:center;gap:16px;}
+.logo{font-size:17px;font-weight:700;letter-spacing:.05em;color:var(--accent);}
+.logo span{color:var(--text2);font-weight:400;font-size:12px;margin-left:8px;}
+.hdr-right{margin-left:auto;display:flex;align-items:center;gap:14px;font-size:12px;color:var(--text2);}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--text2);display:inline-block;}
+.dot.ok{background:var(--green);box-shadow:0 0 6px var(--green);}
+
+#apiBar{background:var(--bg3);border-bottom:1px solid var(--border);padding:8px 24px;display:flex;align-items:center;gap:10px;font-size:12px;}
+#apiBar label{color:var(--text2);white-space:nowrap;}
+#apiKey{flex:1;max-width:400px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-size:12px;font-family:var(--font);}
+#apiKey:focus{outline:none;border-color:var(--accent);}
+
+.tabs{display:flex;background:var(--bg2);border-bottom:1px solid var(--border);padding:0 24px;position:sticky;top:0;z-index:90;}
+.tab-btn{padding:12px 22px;background:none;border:none;color:var(--text2);font-size:14px;font-family:var(--font);cursor:pointer;border-bottom:3px solid transparent;transition:all .2s;font-weight:500;}
+.tab-btn:hover{color:var(--text);}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);}
+
+.tab-content{display:none;padding:20px 24px;max-width:1200px;margin:0 auto;}
+.tab-content.active{display:block;}
+
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:18px 20px;margin-bottom:14px;}
+.card-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--accent);margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+.card-title::before{content:'';width:3px;height:13px;background:var(--accent);border-radius:2px;display:block;}
+
+.upload-zone{border:2px dashed var(--border);border-radius:var(--r);padding:22px;text-align:center;cursor:pointer;transition:all .2s;position:relative;z-index:10;}
+.upload-zone:hover,.upload-zone.dragover{border-color:var(--accent);background:rgba(232,184,75,.05);}
+.upload-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;z-index:11;}
+.upload-icon{font-size:26px;margin-bottom:6px;}
+.upload-label{font-size:13px;color:var(--text2);}
+.upload-label strong{color:var(--accent);}
+.upload-hint{font-size:11px;color:var(--text2);margin-top:3px;opacity:.7;}
+
+.badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+.badge-file{background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:3px 12px;font-size:11px;color:var(--text2);display:flex;align-items:center;gap:5px;}
+.badge-file.ok{border-color:var(--green);color:var(--green);}
+.rm{cursor:pointer;background:none;border:none;font-size:12px;color:var(--text2);line-height:1;}
+.rm:hover{color:var(--red);}
+
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border:none;border-radius:var(--r);font-size:13px;font-family:var(--font);font-weight:700;cursor:pointer;transition:all .15s;}
+.btn-primary{background:var(--accent);color:#000;}
+.btn-primary:hover{background:var(--accent2);transform:translateY(-1px);}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed;transform:none;}
+.btn-ghost{background:var(--bg3);color:var(--text);border:1px solid var(--border);}
+.btn-ghost:hover{border-color:var(--accent);color:var(--accent);}
+.btn-sm{padding:5px 12px;font-size:12px;}
+
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+
+.field{display:flex;flex-direction:column;gap:4px;}
+.field label{font-size:11px;color:var(--text2);font-weight:500;letter-spacing:.04em;}
+.field input,.field select{background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px;font-family:var(--font);padding:7px 10px;text-align:right;transition:border-color .15s;width:100%;}
+.field input:focus{outline:none;border-color:var(--accent);}
+.field input.auto-ok{border-color:var(--green);color:var(--green);}
+.field input.left{text-align:left;}
+.unit{font-size:11px;color:var(--text2);text-align:right;margin-top:2px;}
+
+.seg{display:flex;background:var(--bg3);border:1px solid var(--border);border-radius:6px;overflow:hidden;}
+.seg button{flex:1;padding:7px 6px;background:none;border:none;color:var(--text2);font-size:12px;font-family:var(--font);cursor:pointer;transition:all .15s;}
+.seg button.active{background:var(--accent);color:#000;font-weight:700;}
+
+.result-grid{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;}
+.rc{padding:18px;border-right:1px solid var(--border);}
+.rc:last-child{border-right:none;}
+.rc .lbl{font-size:10px;color:var(--text2);letter-spacing:.08em;font-weight:600;margin-bottom:8px;}
+.rc .val{font-size:20px;font-weight:700;letter-spacing:-.02em;line-height:1;margin-bottom:6px;}
+.rc .sub{font-size:10px;color:var(--text2);line-height:1.6;}
+.badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:.06em;margin-top:4px;}
+.b-resale{background:rgba(74,158,255,.15);color:var(--blue);}
+.b-safe{background:rgba(62,207,142,.15);color:var(--safe);}
+.b-fight{background:rgba(232,184,75,.15);color:var(--fight);}
+.b-challenge{background:rgba(240,96,112,.15);color:var(--challenge);}
+.c-resale{color:var(--text);}
+.c-safe{color:var(--safe);}
+.c-fight{color:var(--fight);}
+.c-challenge{color:var(--challenge);}
+
+.gross-bar{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--r) var(--r);overflow:hidden;}
+.gb{padding:9px 18px;border-right:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
+.gb:last-child{border-right:none;}
+.gb .gl{font-size:10px;color:var(--text2);}
+.gb .gv{font-size:13px;font-weight:700;}
+
+.log{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:10px 14px;font-size:11px;font-family:'Consolas','Menlo',monospace;max-height:90px;overflow-y:auto;line-height:1.9;margin-top:10px;}
+.lok{color:var(--green);}
+.lwarn{color:var(--fight);}
+.lerr{color:var(--red);}
+
+.prog-wrap{background:var(--bg3);border-radius:4px;height:4px;overflow:hidden;margin-top:8px;}
+.prog-bar{height:100%;background:var(--accent);width:0%;transition:width .3s;border-radius:4px;}
+
+.risk-tags{display:flex;flex-wrap:wrap;gap:7px;}
+.rtag{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:5px 11px;cursor:pointer;font-size:12px;color:var(--text2);transition:all .15s;user-select:none;}
+.rtag.active{background:rgba(240,96,112,.12);border-color:var(--red);color:var(--red);}
+.rtag.pos.active{background:rgba(62,207,142,.1);border-color:var(--green);color:var(--green);}
+
+.divider{display:flex;align-items:center;gap:12px;margin:16px 0 10px;color:var(--text2);font-size:11px;letter-spacing:.1em;font-weight:600;}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border);}
+
+.tbl-wrap{overflow-x:auto;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+thead th{background:var(--bg3);color:var(--text2);font-size:10px;font-weight:600;letter-spacing:.06em;text-align:right;padding:9px 11px;border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none;}
+thead th:first-child{text-align:center;cursor:default;}
+thead th:nth-child(2){text-align:left;}
+thead th:hover{color:var(--accent);}
+tbody tr{border-bottom:1px solid var(--border);transition:background .1s;}
+tbody tr:hover{background:rgba(255,255,255,.025);}
+tbody tr.excl{opacity:.38;}
+tbody td{padding:9px 11px;text-align:right;white-space:nowrap;}
+tbody td:first-child{text-align:center;}
+tbody td:nth-child(2){text-align:left;color:var(--text2);}
+td .sub2{font-size:10px;color:var(--text2);}
+.cb-wrap{display:flex;align-items:center;justify-content:center;}
+input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);cursor:pointer;}
+tfoot .avg-row td{background:rgba(232,184,75,.07);font-weight:700;color:var(--accent)!important;border-top:2px solid var(--border);}
+
+.cases-tb{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
+.chips{margin-left:auto;display:flex;gap:7px;}
+.chip{background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:4px 13px;font-size:12px;display:flex;align-items:center;gap:5px;}
+.chip .cv{font-weight:700;color:var(--accent);}
+
+.empty{text-align:center;padding:40px 20px;color:var(--text2);}
+.empty .ei{font-size:36px;margin-bottom:10px;opacity:.35;}
+
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:200;display:none;align-items:center;justify-content:center;}
+.overlay.show{display:flex;}
+.ov-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:28px;width:340px;text-align:center;}
+.spinner{font-size:26px;animation:spin 1s linear infinite;display:block;margin-bottom:12px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+.extract-preview{background:var(--bg);border:1px solid var(--green);border-radius:var(--r);padding:12px 16px;margin-top:10px;font-size:11px;color:var(--green);white-space:pre-wrap;display:none;font-family:'Consolas','Menlo',monospace;max-height:120px;overflow-y:auto;}
+
+@media(max-width:900px){
+  .g4,.result-grid,.gross-bar{grid-template-columns:1fr 1fr;}
+  .rc{border-right:none;border-bottom:1px solid var(--border);}
+  .gb{border-right:none;border-bottom:1px solid var(--border);}
+}
+@media(max-width:600px){
+  .g2,.g3,.g4{grid-template-columns:1fr;}
+  .result-grid,.gross-bar{grid-template-columns:1fr;}
+  header,.tab-content{padding:10px 14px;}
+}
+
+/* Leaflet地図コンテナ */
+.leaflet-container { font-family: var(--font) !important; }
+.leaflet-popup-content-wrapper { border-radius: 8px !important; box-shadow: 0 4px 16px rgba(0,0,0,0.3) !important; }
+
+/* PDF出力ボタン */
+#pdfBtn {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 500;
+  background: var(--accent);
+  color: #000;
+  border: none;
+  border-radius: 50px;
+  padding: 12px 22px;
+  font-size: 14px;
+  font-family: var(--font);
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(232,184,75,.4);
+  transition: all .2s;
+}
+#pdfBtn:hover { background: var(--accent2); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(232,184,75,.5); }
+
+/* 印刷スタイル */
+@media print {
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+  body { background: #fff !important; color: #000 !important; font-size: 11px; margin: 0; }
+
+  /* 非表示にするUI要素 */
+  header, #apiBar, .tabs, #pdfBtn, .upload-zone, .badges,
+  #analyzeBtnArea, #logArea, .extract-preview,
+  #leafletMap { display: none !important; }
+
+  /* 全タブを表示 */
+  .tab-content { display: block !important; padding: 0 !important; }
+
+  /* タブ区切りタイトル */
+  .tab-content::before {
+    display: block;
+    font-size: 13px;
+    font-weight: 700;
+    color: #333;
+    border-top: 2px solid #333;
+    padding: 6px 0 4px;
+    margin-bottom: 8px;
+  }
+  #tab1::before { content: '【物件査定】'; }
+  #tab3::before { content: '【近隣事例サマリー】'; page-break-before: always; }
+  #tab2 { display: none !important; }
+  #tab3 { display: block !important; }
+  #tab3 .card:first-child { display: none !important; }
+
+  /* ページ先頭タイトル */
+  body::before {
+    content: 'HOUSE MARKET　競売・買取 査定レポート';
+    display: block;
+    font-size: 16px;
+    font-weight: 700;
+    border-bottom: 2px solid #333;
+    padding-bottom: 6px;
+    margin-bottom: 12px;
+  }
+
+  .card {
+    background: #fff !important;
+    border: 1px solid #ccc !important;
+    margin-bottom: 8px;
+    padding: 10px !important;
+    break-inside: avoid;
+  }
+  .card-title { color: #333 !important; font-size: 10px; }
+  .card-title::before { background: #333 !important; }
+
+  /* 入力欄・文字切れ防止 */
+  input[type=text] { border: none !important; background: transparent !important; color: #000 !important; width: 100% !important; overflow: visible !important; }
+  .field { overflow: visible !important; }
+  .field label { color: #666 !important; }
+  .field input { color: #000 !important; font-weight: 700; width: 100% !important; }
+  .field input.auto-ok { color: #000 !important; }
+  .field input.left { text-align: left !important; font-size: 10px !important; }
+  #location, #zoning { font-size: 9px !important; }
+
+  /* 査定結果ブロック */
+  [style*="background:var(--bg2)"] { background: #f8f8f8 !important; }
+  [style*="background:var(--bg3)"] { background: #fff !important; }
+  .val { font-size: 14px !important; }
+  .c-safe { color: #1a7a4a !important; }
+  .c-fight { color: #a07000 !important; }
+  .c-challenge { color: #c0392b !important; }
+  .c-resale { color: #000 !important; }
+  .badge { border: 1px solid #999 !important; font-size: 9px; }
+  .b-safe { background: #e8f5ee !important; color: #1a7a4a !important; }
+  .b-fight { background: #fdf3d0 !important; color: #a07000 !important; }
+  .b-challenge { background: #fde8e6 !important; color: #c0392b !important; }
+  .b-resale { background: #e8f0ff !important; color: #1a5f9a !important; }
+
+  /* グリッド */
+  .g2,.g3,.g4 { grid-template-columns: repeat(auto-fit, minmax(120px,1fr)); }
+
+  /* セグメントボタン */
+  .seg button { display: none !important; }
+  .seg button.active { display: inline-block !important; background: #eee !important; color: #000 !important; border: 1px solid #ccc !important; border-radius: 4px; }
+
+  /* リスクタグ */
+  .rtag { display: none !important; }
+  .rtag.active { display: inline-block !important; background: #fde8e6 !important; color: #c0392b !important; border: 1px solid #c0392b !important; font-size: 10px; padding: 2px 8px; }
+
+  /* 近隣事例テーブル */
+  table { width: 100%; border-collapse: collapse; font-size: 10px; }
+  thead th { background: #f5f5f5 !important; color: #333 !important; border: 1px solid #ccc; padding: 4px 6px; text-align: right; }
+  thead th:first-child { text-align: center; }
+  thead th:nth-child(2) { text-align: left; }
+  tbody td { border: 1px solid #ddd; padding: 4px 6px; color: #000 !important; }
+  tbody tr.excl { opacity: .5; }
+  tfoot td { border: 1px solid #ccc; background: #fff8e8 !important; color: #a07000 !important; font-weight: 700; padding: 4px 6px; }
+
+  /* 地図：leafletは非表示、印刷用画像を表示 */
+  #leafletMap { display: none !important; }
+  #printMapDiv { display: block !important; visibility: visible !important; }
+  #printMapDiv img { width: 100% !important; max-width: 100%; display: block !important; visibility: visible !important; }
+  /* インラインスタイルのdisplay:noneを強制上書き */
+  [id="printMapDiv"] { display: block !important; }
+
+  /* 自動計算ボタンは印刷不要 */
+  button[onclick^="resetResale"] { display: none !important; }
+
+  /* ツールバー・ボタン類 */
+  .cases-tb, .btn { display: none !important; }
+
+  /* チップ */
+  .chips { display: flex !important; gap: 6px; margin-bottom: 6px; }
+  .chip { background: #f5f5f5 !important; border: 1px solid #ccc !important; border-radius: 20px; padding: 2px 10px; font-size: 10px; color: #333 !important; }
+  .chip .cv { color: #a07000 !important; font-weight: 700; }
+
+}
+</style>
+</head>
+<body>
+
+<div class="overlay" id="ov">
+  <div class="ov-box">
+    <span class="spinner">⚙️</span>
+    <div id="ovMsg" style="font-size:15px;font-weight:700;margin-bottom:5px;">処理中...</div>
+    <div id="ovDetail" style="font-size:12px;color:var(--text2);">しばらくお待ちください</div>
+    <div class="prog-wrap" style="margin-top:14px;"><div class="prog-bar" id="progBar"></div></div>
+  </div>
+</div>
+
+<!-- PDF出力ボタン -->
+<button id="pdfBtn" onclick="printPDF()">📄 PDF出力</button>
+
+<header>
+  <div class="logo">🏠 HOUSE MARKET<span>競売・買取 査定ツール</span></div>
+  <div class="hdr-right">
+    <button onclick="resetAll()" style="background:var(--accent);border:none;color:#000;border-radius:6px;padding:7px 18px;font-size:13px;font-weight:700;font-family:var(--font);cursor:pointer;transition:all .15s;letter-spacing:.03em;" onmouseover="this.style.background='var(--accent2)';this.style.transform='translateY(-1px)'" onmouseout="this.style.background='var(--accent)';this.style.transform='none'">🔄 新規査定</button>
+    <span style="color:var(--border)">|</span>
+    <span class="dot" id="statusDot"></span>
+    <span id="statusTxt">未読込</span>
+    <span style="color:var(--border)">|</span>
+    <span id="hdrDate"></span>
+  </div>
+</header>
+
+<div id="apiBar">
+  <label>🔑 Anthropic API Key</label>
+  <input type="password" id="apiKey" placeholder="sk-ant-api03-..." oninput="saveKey()">
+  <span id="apiStatus" style="color:var(--text2);font-size:11px;">未設定（手入力でも査定可能）</span>
+  <span style="color:var(--border)">|</span>
+  <span style="color:var(--text2);font-size:11px;">設定するとスキャンPDFも自動解析</span>
+</div>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab('tab1',this)">📋 物件査定</button>
+  <button class="tab-btn" onclick="switchTab('tab2',this)">🏘️ 成約事例</button>
+  <button class="tab-btn" onclick="switchTab('tab3',this);renderMap()">🗺️ 地図</button>
+</div>
+
+<!-- TAB1 -->
+<div class="tab-content active" id="tab1">
+
+  <div class="card">
+    <div class="card-title">資料取込（競売3点セット）</div>
+    <div class="g2" style="gap:14px;">
+      <div>
+        <div class="upload-zone" id="az" ondragover="dov(event,this)" ondragleave="dol(this)" ondrop="dod(event,'a')">
+          <input type="file" accept=".pdf" multiple onchange="addFiles(this,'a')">
+          <div class="upload-icon">📁</div>
+          <div class="upload-label"><strong>クリックまたはドロップ</strong></div>
+          <div class="upload-hint">物件明細書・現況調査報告書・評価書（複数可）</div>
+        </div>
+        <div class="badges" id="aBadges"></div>
+      </div>
+      <div>
+        <div class="upload-zone" ondragover="dov(event,this)" ondragleave="dol(this)" ondrop="dod(event,'o')">
+          <input type="file" accept=".pdf" multiple onchange="addFiles(this,'o')">
+          <div class="upload-icon">📄</div>
+          <div class="upload-label"><strong>評価証明書・登記事項証明書</strong></div>
+          <div class="upload-hint">任意。補完情報として解析に使用。</div>
+        </div>
+        <div class="badges" id="oBadges"></div>
+      </div>
+    </div>
+    <div style="margin-top:14px;display:flex;gap:10px;align-items:center;" id="analyzeBtnArea">
+      <button class="btn btn-primary" id="analyzeBtn" onclick="analyzeAuction()" disabled>
+        🤖 AIで自動解析
+      </button>
+      <span style="font-size:11px;color:var(--text2);" id="analyzeHint">競売PDFを選択してください（スキャンPDF対応）</span>
+    </div>
+    <div class="log" id="logArea">
+      <span class="lok">● システム起動</span><br>
+      <span style="color:var(--text2);">PDFを選択 →「AIで自動解析」を押すとスキャンPDFでも抽出できます</span><br>
+      <span style="color:var(--text2);">APIキー未設定でも手入力で査定できます</span>
+    </div>
+    <div class="extract-preview" id="extractPreview"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">物件情報 <span style="font-size:10px;font-weight:400;color:var(--text2);text-transform:none;letter-spacing:0;margin-left:6px;">🟢緑枠＝AI自動抽出　手修正OK</span></div>
+    <div class="g4">
+      <div class="field">
+        <label>売却基準価額</label>
+        <input type="text" id="basePrice" placeholder="0" onblur="fmtInput(this);calcAll()" onchange="calcAll()">
+        <div class="unit">円</div>
+      </div>
+      <div class="field">
+        <label>買受可能価額（80%）</label>
+        <input type="text" id="minPrice" placeholder="0" onblur="fmtInput(this);calcAll()" onchange="calcAll()">
+        <div class="unit">円</div>
+      </div>
+      <div class="field">
+        <label>土地面積</label>
+        <input type="text" id="landArea" placeholder="0.00" onchange="calcAll()">
+        <div class="unit">㎡</div>
+      </div>
+      <div class="field">
+        <label>建物面積</label>
+        <input type="text" id="buildArea" placeholder="0.00" onchange="calcAll()">
+        <div class="unit">㎡</div>
+      </div>
+      <div class="field">
+        <label>築年数（概算）</label>
+        <input type="text" id="buildAge" placeholder="0" onchange="calcAll()">
+        <div class="unit">年</div>
+      </div>
+      <div class="field">
+        <label>所在地</label>
+        <input type="text" id="location" class="left" placeholder="手入力または自動抽出">
+      </div>
+      <div class="field">
+        <label>用途地域</label>
+        <input type="text" id="zoning" class="left" placeholder="第一種低層 等">
+      </div>
+      <div class="field">
+        <label>接道状況</label>
+        <div class="seg">
+          <button class="active" onclick="setSeg(this,'road','○')">○接道</button>
+          <button onclick="setSeg(this,'road','旗竿')">旗竿</button>
+          <button onclick="setSeg(this,'road','×')">×不可</button>
+        </div>
+        <input type="hidden" id="road" value="○">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">査定条件</div>
+    <div class="divider">近隣事例参照値</div>
+    <div style="margin-bottom:10px;">
+      <button class="btn btn-primary" onclick="
+        document.getElementById('refLandUnit').value='89,905';
+        document.getElementById('refTotalUnit').value='56,628';
+        document.getElementById('refAvgAge').value='37';
+        document.getElementById('rResale').value='';
+        document.getElementById('rResaleLow').value='';
+        calcAll();
+        this.textContent='✅ 入力済';
+        setTimeout(()=>this.innerHTML='🏘️ 近隣事例（全11件）平均を自動入力',2000);
+      " style="font-size:12px;padding:7px 16px;">
+        🏘️ 近隣事例（全11件）平均を自動入力
+      </button>
+      <span style="font-size:11px;color:var(--text2);margin-left:10px;">土地単価 89,905円/㎡　総合単価 56,628円/㎡　平均築年数 37年</span>
+    </div>
+    <div class="g3" style="margin-bottom:14px;">
+      <div class="field">
+        <label>土地単価（近隣採用平均）</label>
+        <input type="text" id="refLandUnit" placeholder="0" onblur="fmtInput(this);calcAll()" onchange="calcAll()">
+        <div class="unit">円/㎡</div>
+      </div>
+      <div class="field">
+        <label>総合単価（近隣採用平均）</label>
+        <input type="text" id="refTotalUnit" placeholder="0" onblur="fmtInput(this);calcAll()" onchange="calcAll()">
+        <div class="unit">円/㎡</div>
+      </div>
+      <div class="field">
+        <label>近隣平均築年数</label>
+        <input type="text" id="refAvgAge" placeholder="0" onchange="calcAll()">
+        <div class="unit">年</div>
+      </div>
+    </div>
+    <div class="divider">リスク補正</div>
+    <div class="risk-tags">
+      <div class="rtag" data-val="-5" onclick="toggleRisk(this)">再建築不可 −5%</div>
+      <div class="rtag" data-val="-3" onclick="toggleRisk(this)">占有あり −3%</div>
+      <div class="rtag" data-val="-3" onclick="toggleRisk(this)">残置物多 −3%</div>
+      <div class="rtag" data-val="-2" onclick="toggleRisk(this)">擁壁あり −2%</div>
+      <div class="rtag" data-val="-2" onclick="toggleRisk(this)">旗竿地 −2%</div>
+      <div class="rtag" data-val="-5" onclick="toggleRisk(this)">浸水履歴 −5%</div>
+      <div class="rtag" data-val="-3" onclick="toggleRisk(this)">地歴不明 −3%</div>
+      <div class="rtag pos" data-val="3" onclick="toggleRisk(this)">駅近5分以内 +3%</div>
+      <div class="rtag pos" data-val="2" onclick="toggleRisk(this)">角地 +2%</div>
+      <div class="rtag pos" data-val="2" onclick="toggleRisk(this)">南道路 +2%</div>
+    </div>
+    <div style="margin-top:8px;font-size:12px;color:var(--text2);">補正合計：<span id="riskTotal" style="color:var(--accent);font-weight:700;">±0%</span></div>
+    <div class="divider">その他設定</div>
+    <div class="g2" style="max-width:600px;">
+      <div class="field">
+        <label>諸費用概算 <span style="font-weight:400;color:var(--text2);">（仲介手数料・登録免許税・司法書士等）</span><br><span style="background:#f0607022;color:var(--red);border:1px solid var(--red);border-radius:4px;font-size:10px;padding:1px 6px;font-weight:700;margin-top:4px;display:inline-block;">要入力</span></label>
+        <input type="text" id="otherCost" value="0" onfocus="if(this.value==='0')this.value=''" onblur="if(this.value==='')this.value='0';fmtInput(this);calcAll()" onchange="calcAll()">
+        <div class="unit">円</div>
+      </div>
+      <div class="field">
+        <label>リフォーム費概算<br><span style="background:#f0607022;color:var(--red);border:1px solid var(--red);border-radius:4px;font-size:10px;padding:1px 6px;font-weight:700;margin-top:4px;display:inline-block;">要入力</span></label>
+        <input type="text" id="reformCost" value="0" onfocus="if(this.value==='0')this.value=''" onblur="if(this.value==='')this.value='0';fmtInput(this);calcAll()" onchange="calcAll()">
+        <div class="unit">円</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">査定結果</div>
+
+    <!-- ブロック1：チャレンジ再販 -->
+    <div style="border:1px solid var(--border);border-radius:var(--r);margin-bottom:12px;overflow:hidden;">
+      <!-- 再販売値ヘッダー -->
+      <div style="background:var(--bg2);border-bottom:2px solid var(--accent);padding:14px 18px;">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+          <div style="flex:1;">
+            <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.08em;margin-bottom:6px;">📊 再販売値予想（チャレンジ）<span style="font-weight:400;margin-left:6px;opacity:.7;">近隣平均単価ベース</span></div>
+            <div style="display:flex;align-items:baseline;gap:6px;">
+              <input type="text" id="rResale" placeholder="−"
+                style="font-size:32px;font-weight:700;color:#ffffff;background:transparent;border:none;border-bottom:2px solid var(--border);width:260px;padding:2px 4px;line-height:1.2;"
+                onchange="calcGrossOnly()">
+              <span style="font-size:14px;color:var(--text2);">円</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:6px;">
+              <div style="font-size:10px;color:var(--text2);" id="sResale">近隣単価 × 面積 × 補正</div>
+              <button onclick="resetResale('high')" style="font-size:10px;color:var(--text2);background:none;border:1px solid var(--border);border-radius:4px;padding:1px 7px;cursor:pointer;opacity:.7;">↩ 自動計算</button>
+            </div>
+          </div>
+          <span class="badge b-resale" style="margin-top:4px;flex-shrink:0;">RESALE HIGH</span>
+        </div>
+      </div>
+      <!-- 仕入推奨3列 -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;">
+        <div style="padding:14px 16px;border-right:1px solid var(--border);">
+          <div style="font-size:10px;color:var(--text2);font-weight:600;margin-bottom:6px;">🟢 仕入推奨（安全）</div>
+          <div style="font-size:18px;font-weight:700;color:var(--safe);" id="rSafe">−</div>
+          <div style="display:flex;align-items:center;gap:4px;margin-top:6px;">
+            <span style="font-size:10px;color:var(--text2);">目標粗利</span>
+            <input type="text" id="mSafe" value="20" onchange="calcAll()"
+              style="width:40px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--safe);font-size:12px;font-weight:700;text-align:center;padding:2px 4px;">
+            <span style="font-size:10px;color:var(--text2);">%</span>
+          </div>
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+            <div style="font-size:10px;color:var(--text2);">粗利目安</div>
+            <div style="font-size:15px;font-weight:700;" id="gSafeH">−</div>
+          </div>
+          <span class="badge b-safe" style="margin-top:6px;">SAFE</span>
+        </div>
+        <div style="padding:14px 16px;border-right:1px solid var(--border);">
+          <div style="font-size:10px;color:var(--text2);font-weight:600;margin-bottom:6px;">🟡 仕入推奨（勝負）</div>
+          <div style="font-size:18px;font-weight:700;color:var(--fight);" id="rFight">−</div>
+          <div style="display:flex;align-items:center;gap:4px;margin-top:6px;">
+            <span style="font-size:10px;color:var(--text2);">目標粗利</span>
+            <input type="text" id="mFight" value="15" onchange="calcAll()"
+              style="width:40px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--fight);font-size:12px;font-weight:700;text-align:center;padding:2px 4px;">
+            <span style="font-size:10px;color:var(--text2);">%</span>
+          </div>
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+            <div style="font-size:10px;color:var(--text2);">粗利目安</div>
+            <div style="font-size:15px;font-weight:700;" id="gFightH">−</div>
+          </div>
+          <span class="badge b-fight" style="margin-top:6px;">FIGHT</span>
+        </div>
+        <div style="padding:14px 16px;">
+          <div style="font-size:10px;color:var(--text2);font-weight:600;margin-bottom:6px;">🔴 仕入推奨（チャレンジ）</div>
+          <div style="font-size:18px;font-weight:700;color:var(--challenge);" id="rChallenge">−</div>
+          <div style="display:flex;align-items:center;gap:4px;margin-top:6px;">
+            <span style="font-size:10px;color:var(--text2);">目標粗利</span>
+            <input type="text" id="mChallenge" value="10" onchange="calcAll()"
+              style="width:40px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--challenge);font-size:12px;font-weight:700;text-align:center;padding:2px 4px;">
+            <span style="font-size:10px;color:var(--text2);">%</span>
+          </div>
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+            <div style="font-size:10px;color:var(--text2);">粗利目安</div>
+            <div style="font-size:15px;font-weight:700;" id="gChallengeH">−</div>
+          </div>
+          <span class="badge b-challenge" style="margin-top:6px;">CHALLENGE</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ブロック2：売り切り再販 -->
+    <div style="border:1px solid var(--border);border-radius:var(--r);margin-bottom:12px;overflow:hidden;">
+      <div style="background:var(--bg2);border-bottom:2px solid #5bc8ff;padding:14px 18px;">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+            <div style="flex:1;">
+              <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.08em;margin-bottom:6px;">📊 再販売値予想（売り切り）<span style="font-weight:400;margin-left:6px;opacity:.7;">−10%保守ライン</span></div>
+              <div style="display:flex;align-items:baseline;gap:6px;">
+                <input type="text" id="rResaleLow" placeholder="−"
+                  style="font-size:32px;font-weight:700;color:#ffffff;background:transparent;border:none;border-bottom:2px solid var(--border);width:260px;padding:2px 4px;line-height:1.2;"
+                  onchange="calcGrossOnly()">
+                <span style="font-size:14px;color:var(--text2);">円</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:6px;">
+                <div style="font-size:10px;color:var(--text2);">チャレンジ価格の90%（早期売却想定）</div>
+                <button onclick="resetResale('low')" style="font-size:10px;color:var(--text2);background:none;border:1px solid var(--border);border-radius:4px;padding:1px 7px;cursor:pointer;opacity:.7;">↩ 自動計算</button>
+              </div>
+            </div>
+            <span class="badge b-resale" style="margin-top:4px;flex-shrink:0;">RESALE LOW</span>
+          </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;">
+        <div style="padding:14px 16px;border-right:1px solid var(--border);">
+          <div style="font-size:10px;color:var(--text2);font-weight:600;margin-bottom:6px;">🟢 仕入推奨（安全）</div>
+          <div style="font-size:18px;font-weight:700;color:var(--safe);" id="rSafeL">−</div>
+          <div style="display:flex;align-items:center;gap:4px;margin-top:6px;">
+            <span style="font-size:10px;color:var(--text2);">目標粗利</span>
+            <input type="text" id="mSafeL" value="20" onchange="calcAll()"
+              style="width:40px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--safe);font-size:12px;font-weight:700;text-align:center;padding:2px 4px;">
+            <span style="font-size:10px;color:var(--text2);">%</span>
+          </div>
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+            <div style="font-size:10px;color:var(--text2);">粗利目安</div>
+            <div style="font-size:15px;font-weight:700;" id="gSafeL">−</div>
+          </div>
+          <span class="badge b-safe" style="margin-top:6px;">SAFE</span>
+        </div>
+        <div style="padding:14px 16px;border-right:1px solid var(--border);">
+          <div style="font-size:10px;color:var(--text2);font-weight:600;margin-bottom:6px;">🟡 仕入推奨（勝負）</div>
+          <div style="font-size:18px;font-weight:700;color:var(--fight);" id="rFightL">−</div>
+          <div style="display:flex;align-items:center;gap:4px;margin-top:6px;">
+            <span style="font-size:10px;color:var(--text2);">目標粗利</span>
+            <input type="text" id="mFightL" value="15" onchange="calcAll()"
+              style="width:40px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--fight);font-size:12px;font-weight:700;text-align:center;padding:2px 4px;">
+            <span style="font-size:10px;color:var(--text2);">%</span>
+          </div>
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+            <div style="font-size:10px;color:var(--text2);">粗利目安</div>
+            <div style="font-size:15px;font-weight:700;" id="gFightL">−</div>
+          </div>
+          <span class="badge b-fight" style="margin-top:6px;">FIGHT</span>
+        </div>
+        <div style="padding:14px 16px;">
+          <div style="font-size:10px;color:var(--text2);font-weight:600;margin-bottom:6px;">🔴 仕入推奨（チャレンジ）</div>
+          <div style="font-size:18px;font-weight:700;color:var(--challenge);" id="rChallengeL">−</div>
+          <div style="display:flex;align-items:center;gap:4px;margin-top:6px;">
+            <span style="font-size:10px;color:var(--text2);">目標粗利</span>
+            <input type="text" id="mChallengeL" value="10" onchange="calcAll()"
+              style="width:40px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--challenge);font-size:12px;font-weight:700;text-align:center;padding:2px 4px;">
+            <span style="font-size:10px;color:var(--text2);">%</span>
+          </div>
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+            <div style="font-size:10px;color:var(--text2);">粗利目安</div>
+            <div style="font-size:15px;font-weight:700;" id="gChallengeL">−</div>
+          </div>
+          <span class="badge b-challenge" style="margin-top:6px;">CHALLENGE</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="calcNote" style="font-size:11px;color:var(--text2);margin-top:6px;line-height:1.9;"></div>
+  </div>
+
+</div>
+
+<!-- TAB2 -->
+<div class="tab-content" id="tab2">
+  <div class="card">
+    <div class="card-title">近隣成約事例 PDF読込</div>
+    <div class="upload-zone" id="cz" ondragover="dov(event,this)" ondragleave="dol(this)" ondrop="dod(event,'c')">
+      <input type="file" accept=".pdf" multiple onchange="addFiles(this,'c')">
+      <div class="upload-icon">📂</div>
+      <div class="upload-label"><strong>クリックまたはドロップ</strong>（複数可）</div>
+      <div class="upload-hint">REINS・独自書式など。テキストPDFは即時抽出、スキャンはAPI解析。手入力追加も可。</div>
+    </div>
+    <div class="badges" id="cBadges" style="margin-top:10px;"></div>
+    <div class="prog-wrap" id="cProg" style="display:none;margin-top:6px;"><div class="prog-bar" id="cProgBar"></div></div>
+  </div>
+
+  <div class="cases-tb">
+    <button class="btn btn-ghost btn-sm" onclick="checkAll(true)">全採用</button>
+    <button class="btn btn-ghost btn-sm" onclick="checkAll(false)">全除外</button>
+    <button class="btn btn-ghost btn-sm" onclick="addManual()">＋ 手入力追加</button>
+    <div class="chips">
+      <div class="chip">採用 <span class="cv" id="adoptCnt">0</span>件</div>
+      <div class="chip">土地単価平均 <span class="cv" id="avgLU">−</span> 円/㎡</div>
+      <div class="chip">総合単価平均 <span class="cv" id="avgTU">−</span> 円/㎡</div>
+    </div>
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:46px;">採用</th>
+          <th onclick="sortTbl(1)">物件名・メモ <span id="si1">↕</span></th>
+          <th onclick="sortTbl(2)">成約年月日 <span id="si2">↕</span></th>
+          <th onclick="sortTbl(3)">成約価格 <span id="si3">↕</span></th>
+          <th onclick="sortTbl(4)">土地㎡ <span id="si4">↕</span></th>
+          <th onclick="sortTbl(5)">建物㎡ <span id="si5">↕</span></th>
+          <th onclick="sortTbl(6)">築年数 <span id="si6">↕</span></th>
+          <th onclick="sortTbl(7)">土地単価 <span id="si7">↕</span></th>
+          <th onclick="sortTbl(8)">総合単価 <span id="si8">↕</span></th>
+          <th style="width:48px;cursor:default;"></th>
+        </tr>
+      </thead>
+      <tbody id="cBody"></tbody>
+      <tfoot>
+        <tr class="avg-row" id="avgRow" style="display:none;">
+          <td></td>
+          <td style="text-align:left;">採用平均</td>
+          <td></td>
+          <td id="avPrice">−</td>
+          <td id="avLand">−</td>
+          <td id="avBuild">−</td>
+          <td id="avAge">−</td>
+          <td id="avLU">−</td>
+          <td id="avTU">−</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <div style="margin-top:14px;display:flex;gap:10px;align-items:center;">
+    <button class="btn btn-primary" onclick="reflectAvg()">📋 採用平均を査定に反映</button>
+    <span style="font-size:11px;color:var(--text2);">採用チェックの平均単価を査定画面へコピー</span>
+  </div>
+</div>
+
+<!-- TAB3: 地図 -->
+<div class="tab-content" id="tab3">
+  <div class="card">
+    <div class="card-title">物件位置・近隣事例マップ</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+      <span>★ 対象物件と近隣成約事例をOpenStreetMap上に表示。ピンをクリックで詳細を確認できます。</span>
+    </div>
+    <div id="leafletMap"></div>
+    <!-- 印刷時のみ表示される地図画像 -->
+    <div id="printMapDiv" style="display:none !important;margin-top:8px;">
+      <div style="font-size:11px;font-weight:700;color:#333;margin-bottom:6px;">📍 エリアマップ</div>
+      <div id="printMapContent" style="border:1px solid #ddd;border-radius:6px;padding:12px 16px;background:#f8f8f8;">
+        <div style="font-size:12px;color:#555;margin-bottom:4px;">対象物件の周辺地図はこちらで確認できます：</div>
+        <div id="printMapUrl" style="font-size:11px;color:#1a5fc4;word-break:break-all;"></div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">近隣成約事例 サマリー（読込済み全件）</div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="text-align:left;cursor:default;">物件名</th>
+            <th>成約日</th>
+            <th>成約価格</th>
+            <th>土地㎡</th>
+            <th>建物㎡</th>
+            <th>築年数</th>
+            <th>土地単価</th>
+            <th>総合単価</th>
+          </tr>
+        </thead>
+        <tbody id="mapCaseBody"></tbody>
+        <tfoot>
+          <tr class="avg-row">
+            <td style="text-align:left;">中古物件 全件平均</td>
+            <td></td>
+            <td id="mAvgP">−</td>
+            <td id="mAvgL">−</td>
+            <td id="mAvgB">−</td>
+            <td id="mAvgA">−</td>
+            <td id="mAvgLU">−</td>
+            <td id="mAvgTU">−</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:10px;align-items:center;">
+      <button class="btn btn-primary" onclick="applyMapAvgToAssessment()">📋 全件平均を査定に反映</button>
+      <span style="font-size:11px;color:var(--text2);">全中古事例の平均単価を査定条件へコピーします</span>
+    </div>
+  </div>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const BUILT_IN_KEY = "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";
+const GOOGLE_MAPS_KEY = "AIzaSyCZ-FYVmJ3moOkh6ZWxXBa4OADMvPEFE7c";
+
+const S = {
+  apiKey: BUILT_IN_KEY,
+  riskRate: 0,
+  aFiles: [], oFiles: [], cFiles: [],
+  cases: [],
+  sortCol: -1, sortAsc: true,
+};
+
+// ======================================
+// 新規査定リセット
+// ======================================
+function resetAll() {
+  if (!confirm('現在の査定データをクリアして新規査定を開始しますか？')) return;
+
+  // 状態リセット
+  S.aFiles = []; S.oFiles = []; S.cFiles = [];
+  S.cases = [];
+  S.riskRate = 0;
+
+  // 物件情報フィールドをクリア
+  ['basePrice','minPrice','landArea','buildArea','buildAge','location','zoning'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+
+  // 査定条件フィールドをクリア
+  ['refLandUnit','refTotalUnit','refAvgAge','otherCost','reformCost'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = id === 'otherCost' || id === 'reformCost' ? '0' : '';
+  });
+
+  // 再販売値クリア
+  ['rResale','rResaleLow'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+
+  // リスク補正チェックを全解除
+  document.querySelectorAll('.risk-btn.active').forEach(btn => btn.classList.remove('active'));
+  S.riskRate = 0;
+  const rt = document.getElementById('riskTotal');
+  if (rt) rt.textContent = '±0%';
+
+  // 接道状況をデフォルトに
+  document.querySelectorAll('.road-btn').forEach(b => b.classList.remove('active'));
+  const defaultRoad = document.querySelector('.road-btn[data-val="接道"]');
+  if (defaultRoad) defaultRoad.classList.add('active');
+
+  // バッジ・ログをクリア
+  ['aBadges','oBadges'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '';
+  });
+
+  // ボタン状態リセット
+  const analyzeBtn = document.getElementById('analyzeBtn');
+  if (analyzeBtn) analyzeBtn.disabled = true;
+  const analyzeHint = document.getElementById('analyzeHint');
+  if (analyzeHint) analyzeHint.textContent = '競売PDFを選択してください（スキャンPDF対応）';
+
+  // プレビューを非表示
+  const prev = document.getElementById('extractPreview');
+  if (prev) { prev.style.display = 'none'; prev.textContent = ''; }
+
+  // ログエリアリセット
+  const logArea = document.getElementById('logArea');
+  if (logArea) { logArea.style.display = 'block'; logArea.innerHTML = '<div style="color:var(--green);font-size:12px;">● システム起動<br>PDFを選択 →「AIで自動解析」を押すとスキャンPDFでも抽出できます<br>APIキー未設定でも手入力で査定できます</div>'; }
+
+  // analyzeBtnAreaを再表示
+  const btnArea = document.getElementById('analyzeBtnArea');
+  if (btnArea) btnArea.style.display = '';
+
+  // 成約事例テーブルをクリア
+  renderCaseTable();
+  calcAvg();
+
+  // 査定結果をダッシュに
+  setDash();
+
+  // ステータスリセット
+  document.getElementById('statusDot').classList.remove('ok');
+  document.getElementById('statusTxt').textContent = '未読込';
+
+  // タブを物件査定に戻す
+  switchTab('tab1', document.querySelector('.tab-btn'));
+
+  addLog('ok', '🔄 新規査定を開始しました');
+}
+
+// 初期化
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('hdrDate').textContent =
+    new Date().toLocaleDateString('ja-JP',{year:'numeric',month:'long',day:'numeric'});
+  // APIキーは埋め込み済み - 入力バーを非表示
+  const apiBar = document.getElementById('apiBar');
+  if (apiBar) apiBar.style.display = 'none';
+  updateApiStatus();
+  renderEmpty();
+  setDash();
+});
+
+// APIキー
+function saveKey() {
+  S.apiKey = document.getElementById('apiKey').value.trim();
+  localStorage.setItem('hm_apikey', S.apiKey);
+  updateApiStatus();
+}
+function updateApiStatus() {
+  const el = document.getElementById('apiStatus');
+  if (S.apiKey.startsWith('sk-ant-') && S.apiKey.length > 20) {
+    el.textContent = '✅ 設定済 - スキャンPDF解析有効';
+    el.style.color = 'var(--green)';
+  } else {
+    el.textContent = '未設定（手入力でも査定可能）';
+    el.style.color = 'var(--text2)';
+  }
+}
+
+// タブ
+function switchTab(id, btn) {
+  document.querySelectorAll('.tab-content').forEach(e => e.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(e => e.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+}
+
+// ドラッグ&ドロップ
+function dov(e,el){e.preventDefault();el.classList.add('dragover');}
+function dol(el){el.classList.remove('dragover');}
+function dod(e,t){
+  e.preventDefault();
+  e.currentTarget.classList.remove('dragover');
+  const fs = Array.from(e.dataTransfer.files).filter(f=>f.name.toLowerCase().endsWith('.pdf'));
+  if (fs.length) handleFiles(fs,t);
+}
+function addFiles(inp,t){
+  console.log('addFiles called', t, inp.files.length);
+  handleFiles(Array.from(inp.files),t);
+  inp.value='';
+}
+
+function handleFiles(files, t) {
+  console.log('handleFiles called', t, files.length, files.map(f=>f.name));
+  if (t==='a') {
+    files.forEach(f => { if(!S.aFiles.find(x=>x.name===f.name)) S.aFiles.push(f); });
+    renderBadges('aBadges', S.aFiles, 'a');
+    document.getElementById('analyzeBtn').disabled = S.aFiles.length===0;
+    document.getElementById('analyzeHint').textContent = S.aFiles.length
+      ? '✅ ファイル選択済。「AIで自動解析」を押してください'
+      : '競売PDFを選択してください';
+    // ファイル名からプリセット自動適用
+    files.forEach(f => tryPreset(f.name));
+  } else if (t==='o') {
+    files.forEach(f => { if(!S.oFiles.find(x=>x.name===f.name)) S.oFiles.push(f); });
+    renderBadges('oBadges', S.oFiles, 'o');
+  } else if (t==='c') {
+    files.forEach(f => { if(!S.cFiles.find(x=>x.name===f.name)) S.cFiles.push(f); });
+    renderBadges('cBadges', S.cFiles, 'c');
+    // プリセットにあれば展開、なければPDF解析
+    const unmatched = [];
+    files.forEach(f => {
+      const key = f.name.replace(/\.pdf$/i,'').trim().replace(/\s+/g,'_');
+      const cData = CASE_PRESETS[key];
+      if (cData) {
+        let added = 0;
+        cData.forEach(row => {
+          if (!S.cases.find(r => r.name === row.name)) {
+            const lu = row.landArea > 0 ? Math.round(row.price / row.landArea) : 0;
+            const tu = (row.landArea + row.buildArea) > 0 ? Math.round(row.price / (row.landArea + row.buildArea)) : 0;
+            S.cases.push({ ...row, id: Date.now()+Math.random(), adopted:true, _lu:lu, _tu:tu });
+            added++;
+          }
+        });
+        if (added > 0) {
+          renderCaseTable();
+          calcAvg();
+          addLog('ok', `📋 ${f.name} → 近隣事例 ${added}件 登録完了`);
+        }
+      } else {
+        unmatched.push(f);
+      }
+    });
+    if (unmatched.length > 0) parseCasePDFs(unmatched);
+  }
+}
+
+function renderBadges(id, files, t) {
+  const c = document.getElementById(id);
+  c.innerHTML = '';
+  files.forEach((f,i) => {
+    const b = document.createElement('div');
+    b.className = 'badge-file ok';
+    b.innerHTML = `📄 ${f.name} <button class="rm" onclick="rmFile('${t}',${i})">×</button>`;
+    c.appendChild(b);
+  });
+}
+
+function rmFile(t,i) {
+  if(t==='a'){S.aFiles.splice(i,1);renderBadges('aBadges',S.aFiles,'a');}
+  else if(t==='o'){S.oFiles.splice(i,1);renderBadges('oBadges',S.oFiles,'o');}
+  else if(t==='c'){S.cFiles.splice(i,1);renderBadges('cBadges',S.cFiles,'c');}
+}
+
+// PDF → テキスト
+async function pdfToText(file) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+  let text = '';
+  for(let i=1;i<=pdf.numPages;i++) {
+    const pg = await pdf.getPage(i);
+    const ct = await pg.getTextContent();
+    text += ct.items.map(it=>it.str).join(' ') + '\n';
+  }
+  return text;
+}
+
+// PDF → base64画像（スキャンPDF用）
+async function pdfToImages(file, maxPages=3) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+  const pages = Math.min(pdf.numPages, maxPages);
+  const imgs = [];
+  for(let i=1;i<=pages;i++) {
+    const pg = await pdf.getPage(i);
+    const vp = pg.getViewport({scale:1.5});
+    const canvas = document.createElement('canvas');
+    canvas.width = vp.width; canvas.height = vp.height;
+    await pg.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
+    imgs.push(canvas.toDataURL('image/jpeg',0.85).split(',')[1]);
+  }
+  return imgs;
+}
+
+// Claude API
+async function callClaude(messages, system) {
+  if (!S.apiKey) throw new Error('APIキーが未設定です');
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': S.apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 1024,
+      system,
+      messages,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(()=>({}));
+    throw new Error(err.error?.message || 'API Error ' + res.status);
+  }
+  const data = await res.json();
+  return data.content.map(c=>c.text||'').join('');
+}
+
+// 競売PDF解析（APIキーなし→テキスト抽出、あり→AI画像解析）
+async function analyzeAuction() {
+  if (!S.aFiles.length) return;
+
+  showOv('競売PDF解析中', 'テキスト抽出中...');
+  setP(10);
+  addLog('ok', '競売PDF解析開始...');
+
+  try {
+    // ── STEP1: pdf.js でテキスト抽出を試みる ──
+    let allText = '';
+    for (let i=0; i<S.aFiles.length; i++) {
+      setP(10 + 30*(i/S.aFiles.length));
+      const text = await pdfToText(S.aFiles[i]);
+      allText += text + '\n';
+      addLog('ok', `${S.aFiles[i].name} テキスト抽出完了（${text.replace(/\s/g,'').length}文字）`);
+    }
+    setP(50);
+
+    const hasEnoughText = allText.replace(/\s/g,'').length > 100;
+
+    if (hasEnoughText) {
+      // ── テキストPDF: 正規表現で直接パース ──
+      addLog('ok', 'テキストPDF確認 → 正規表現で自動抽出');
+      const data = parseAuctionTextFull(allText);
+      applyExtracted(data);
+      setP(100);
+
+      const prev = document.getElementById('extractPreview');
+      prev.style.display = 'block';
+      prev.textContent = '✅ テキスト自動抽出結果（確認・修正してください）\n' + JSON.stringify(data, null, 2);
+
+      document.getElementById('statusDot').classList.add('ok');
+      document.getElementById('statusTxt').textContent = 'テキスト抽出済';
+      addLog('ok', '自動抽出完了。内容を確認・修正してください。');
+
+    } else if (S.apiKey) {
+      // ── スキャンPDF + APIキーあり: Claude画像解析 ──
+      addLog('ok', 'スキャンPDF → Claude API画像解析に切替');
+      document.getElementById('ovDetail').textContent = 'AI画像解析中...';
+
+      const allImgs = [];
+      for (let i=0; i<Math.min(S.aFiles.length,3); i++) {
+        setP(50 + 20*i);
+        const imgs = await pdfToImages(S.aFiles[i], 3);
+        allImgs.push(...imgs);
+      }
+      setP(75);
+      addLog('ok', `${allImgs.length}ページ → Claude API送信`);
+
+      const content = [
+        ...allImgs.slice(0,6).map(b64=>({
+          type:'image', source:{type:'base64',media_type:'image/jpeg',data:b64}
+        })),
+        {type:'text', text:`競売3点セット（物件明細書・現況調査報告書・評価書）のPDFです。
+以下の項目をJSONのみで返してください（前後の説明不要）：
+{
+  "売却基準価額": "円単位の数字のみ（競売の基準となる価格。最も高い価格）",
+  "買受可能価額": "円単位の数字のみ（売却基準価額の約80%の価格。入札できる最低価格。「買受申出保証額」「保証額」とは別の項目）",
+  "土地面積": "㎡の数字のみ",
+  "建物面積": "㎡の数字のみ（1階と2階合計）",
+  "築年": "昭和○年 または 平成○年 または 令和○年",
+  "所在地": "市区町村以降の住所",
+  "用途地域": "用途地域名",
+  "備考": "占有・残置物・再建築不可・接道不可など特記事項"
+}
+
+【重要】公告表には通常3つの金額が並ぶ：
+1. 売却基準価額（最大）→ "売却基準価額"に設定
+2. 買受可能価額（売却基準価額の約80%）→ "買受可能価額"に設定
+3. 買受申出保証額（最小・保証金）→ 無視
+
+不明は空文字。JSONのみ。`}
+      ];
+
+      const raw = await callClaude([{role:'user',content}],
+        'あなたは不動産競売資料の解析AIです。JSONフォーマットのみで返答します。');
+      setP(95);
+
+      const jsonStr = raw.match(/\{[\s\S]*\}/)?.[0];
+      if (!jsonStr) throw new Error('JSON取得失敗: ' + raw.slice(0,80));
+      const data = JSON.parse(jsonStr);
+
+      applyExtracted(data);
+      setP(100);
+
+      const prev = document.getElementById('extractPreview');
+      prev.style.display = 'block';
+      prev.textContent = '✅ AI解析結果（確認・修正してください）\n' + JSON.stringify(data, null, 2);
+
+      document.getElementById('statusDot').classList.add('ok');
+      document.getElementById('statusTxt').textContent = 'AI解析済';
+      addLog('ok', 'AI解析完了。内容を確認・修正してください。');
+
+    } else {
+      // ── スキャンPDF + APIキーなし ──
+      addLog('warn', 'スキャンPDFのためテキスト取得できませんでした');
+      addLog('warn', '→ APIキーを設定するとAI画像解析が使えます');
+      addLog('warn', '→ または下の物件情報欄に手入力してください');
+    }
+
+  } catch(e) {
+    addLog('err', 'エラー: ' + e.message);
+    addLog('warn', '物件情報欄に手入力してください');
+  } finally {
+    setTimeout(hideOv, 400);
+  }
+}
+
+// テキストPDF用 詳細パーサー（競売3点セット対応）
+function parseAuctionTextFull(text) {
+  const result = {};
+
+  // 売却基準価額（複数パターン対応）
+  let m = text.match(/売却基準価額[（(]円[)）]\s*[\n\r\s]*([0-9,，]+)/);
+  if (!m) m = text.match(/売却基準価額\s*[\n\r]*\s*([0-9,，]+)/);
+  if (!m) m = text.match(/([0-9,，]{7,})\s*\n[^\n]*買受可能価額/);
+  if (m) result['売却基準価額'] = m[1].replace(/[,，]/g,'');
+
+  // 買受可能価額（買受申出保証額と混同しないよう整合チェック付き）
+  m = text.match(/買受可能価額[（(]円[)）]\s*[\n\r\s]*([0-9,，]+)/);
+  if (!m) m = text.match(/買受可能価額\s*[\n\r]*\s*([0-9,，]+)/);
+  if (m) {
+    const v = parseInt(m[1].replace(/[,，]/g,''));
+    if (result['売却基準価額']) {
+      const base = parseInt(result['売却基準価額']);
+      const ratio = v / base;
+      // 売却基準価額の65〜90%なら正常、それ以外は保証額を誤認→80%計算
+      result['買受可能価額'] = (ratio >= 0.65 && ratio <= 0.90) ? String(v) : String(Math.round(base * 0.8));
+    } else {
+      result['買受可能価額'] = String(v);
+    }
+  }
+
+  // 売却基準価額・買受可能価額を表から読む（公告書式）
+  if (!result['売却基準価額']) {
+    m = text.match(/([0-9]{1,3}(?:[,，][0-9]{3})+)\s*\n\s*([0-9]{1,3}(?:[,，][0-9]{3})+)/);
+    if (m) {
+      const a = parseInt(m[1].replace(/[,，]/g,'')), b = parseInt(m[2].replace(/[,，]/g,''));
+      if (a > b && a > 1000000) {
+        const ratio = b / a;
+        result['売却基準価額'] = String(a);
+        // b が売却基準価額の65〜90%なら買受可能価額、そうでなければ80%計算
+        result['買受可能価額'] = (ratio >= 0.65 && ratio <= 0.90) ? String(b) : String(Math.round(a * 0.8));
+      }
+    }
+  }
+
+  // フォールバック：最大値を売却基準価額、買受可能価額は80%計算
+  const allNums = [...text.matchAll(/([0-9]{1,3}(?:,[0-9]{3})+)/g)].map(m=>parseInt(m[1].replace(/,/g,'')));
+  const candidates = allNums.filter(n => n >= 1000000 && n <= 999999999);
+  if (!result['売却基準価額'] && candidates.length >= 1) {
+    candidates.sort((a,b)=>b-a);
+    result['売却基準価額'] = String(candidates[0]);
+    result['買受可能価額'] = String(Math.round(candidates[0]*0.8));
+  }
+
+  // 土地面積
+  m = text.match(/地\s*積\s*([0-9]+\.?[0-9]*)\s*(?:平方メートル|㎡|m²)/);
+  if (!m) m = text.match(/土地面積[^\d]*([0-9]+\.?[0-9]*)/);
+  if (!m) m = text.match(/([0-9]+\.[0-9]+)\s*(?:平方メートル|㎡)/);
+  if (m) result['土地面積'] = m[1];
+
+  // 建物面積（1階＋2階合計）
+  const f1 = text.match(/1\s*階\s*([0-9]+\.?[0-9]*)\s*(?:平方メートル|㎡|m²)/);
+  const f2 = text.match(/2\s*階\s*([0-9]+\.?[0-9]*)\s*(?:平方メートル|㎡|m²)/);
+  if (f1 && f2) {
+    result['建物面積'] = String((parseFloat(f1[1]) + parseFloat(f2[1])).toFixed(2));
+  } else {
+    m = text.match(/床\s*面\s*積[^\d]*([0-9]+\.?[0-9]*)/);
+    if (m) result['建物面積'] = m[1];
+  }
+
+  // 築年（平成・令和・昭和）
+  m = text.match(/(?:建築年月日|新築)[^\n]*?((?:昭和|平成|令和)\s*[0-9]+\s*年)/);
+  if (!m) m = text.match(/(平成|令和|昭和)\s*([0-9]+)\s*年\s*[0-9]+\s*月.*?新築/);
+  if (!m) m = text.match(/経過\s*年\s*数[^\d]*約\s*([0-9]+)\s*年/);
+  if (m) {
+    if (m[1] && (m[1].includes('平成')||m[1].includes('令和')||m[1].includes('昭和'))) {
+      result['築年'] = m[1].trim();
+    } else if (m[1] && /^[0-9]+$/.test(m[1])) {
+      // 経過年数から逆算
+      result['築年'] = `約${m[1]}年前`;
+    }
+  }
+  // 経過年数から直接取得
+  if (!result['築年']) {
+    m = text.match(/経過\s*年\s*数\s*約\s*([0-9]+)\s*年/);
+    if (m) result['_buildAge'] = m[1];
+  }
+
+  // 所在地
+  m = text.match(/所\s*在\s*((?:愛知|岐阜|三重|名古屋|瀬戸|春日井|一宮|小牧)[^\s\n]{2,20})/);
+  if (!m) m = text.match(/所\s*在[　\s]*([\u30A0-\u30FF\u3040-\u309F\u4E00-\u9FFF\u3000-\u303F0-9０-９a-zA-Zａ-ｚＡ-Ｚ\-－一-龥ぁ-ん]{4,30})/);
+  if (m) result['所在地'] = m[1].trim().replace(/\s+/g,'');
+
+  // 用途地域
+  m = text.match(/用\s*途\s*地\s*域\s*(第[一二三四]種[^\s\n]{2,15})/);
+  if (!m) m = text.match(/(第[一二三四]種(?:低層|中高層|住居|商業|工業)[^\s\n]{0,10}(?:住居)?(?:専用)?(?:地域)?)/);
+  if (m) result['用途地域'] = m[1].trim();
+
+  // 備考（リスク要因）
+  const risks = [];
+  if (text.includes('残置') || text.includes('家財')) risks.push('残置物あり');
+  if (text.includes('占有') && !text.includes('占有なし') && !text.includes('占有者なし')) risks.push('占有あり');
+  if (text.includes('再建築不可') || text.includes('再建不可')) risks.push('再建築不可');
+  if (text.includes('アスベスト')) risks.push('アスベスト要注意');
+  if (text.includes('リフォーム') || text.includes('改修')) risks.push('リフォーム済（詳細不明）');
+  result['備考'] = risks.join('、');
+
+  return result;
+}
+
+function applyExtracted(data) {
+  const set = (id, key, isMoney) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const v = String(data[key]||'').replace(/[,，\s円㎡]/g,'');
+    if (!v) return;
+    if (isMoney) {
+      const n = parseInt(v);
+      if (n > 0) { el.value = n.toLocaleString('ja-JP'); el.classList.add('auto-ok'); }
+    } else {
+      el.value = v;
+      if (v) el.classList.add('auto-ok');
+    }
+  };
+
+  set('basePrice','売却基準価額',true);
+  set('minPrice','買受可能価額',true);
+  set('landArea','土地面積',false);
+  set('buildArea','建物面積',false);
+  set('location','所在地',false);
+  set('zoning','用途地域',false);
+
+  // 築年 → 築年数 or 直接築年数
+  const chiku = String(data['築年']||'');
+  let year = 0;
+  const s2 = chiku.match(/昭和\s*(\d+)/); if(s2) year = 1925+parseInt(s2[1]);
+  const h2 = chiku.match(/平成\s*(\d+)/); if(h2) year = 1988+parseInt(h2[1]);
+  const r2 = chiku.match(/令和\s*(\d+)/); if(r2) year = 2018+parseInt(r2[1]);
+  const y2 = chiku.match(/(\d{4})/); if(y2&&!year) year = parseInt(y2[1]);
+  if (year > 1900) {
+    const el = document.getElementById('buildAge');
+    el.value = new Date().getFullYear()-year;
+    el.classList.add('auto-ok');
+  } else if (data['_buildAge']) {
+    const el = document.getElementById('buildAge');
+    el.value = data['_buildAge'];
+    el.classList.add('auto-ok');
+  }
+
+  // 備考からリスク自動検知
+  const memo = String(data['備考']||'');
+  document.querySelectorAll('.rtag').forEach(tag => {
+    if (memo.includes('再建築不可')&&tag.dataset.val==='-5') tag.classList.add('active');
+    if (memo.includes('占有')&&tag.dataset.val==='-3'&&tag.textContent.includes('占有')) tag.classList.add('active');
+    if (memo.includes('残置')&&tag.dataset.val==='-3'&&tag.textContent.includes('残置')) tag.classList.add('active');
+  });
+  recalcRisk();
+  calcAll();
+
+  // SUBJECT（地図用）をフォームの値で更新
+  const loc = document.getElementById('location')?.value || '';
+  const base = document.getElementById('basePrice')?.value || '';
+  const minp = document.getElementById('minPrice')?.value || '';
+  const la = document.getElementById('landArea')?.value || '';
+  const ba = document.getElementById('buildArea')?.value || '';
+  if (base) SUBJECT.price = `売基 ${base}円 買受 ${minp}円`;
+  if (la || ba) SUBJECT.area = `土地:${la}㎡ 建物:${ba}㎡`;
+  if (loc) {
+    SUBJECT.name = '【対象】' + loc;
+    // 住所からジオコーディングして地図座標を自動更新
+    geocodeSubject(loc);
+  }
+}
+
+// 近隣事例PDF解析
+async function parseCasePDFs(files) {
+  const progEl = document.getElementById('cProg');
+  progEl.style.display = 'block';
+
+  for (let i=0; i<files.length; i++) {
+    document.getElementById('cProgBar').style.width = ((i/files.length)*100)+'%';
+    const f = files[i];
+    try {
+      const text = await pdfToText(f);
+      const hasText = text.replace(/\s/g,'').length > 80;
+      if (hasText) {
+        // テキストPDF → 複数件抽出
+        if (S.apiKey) {
+          const rows = await parseCaseTextWithAI(text, f.name);
+          rows.forEach(row => {
+            if (!S.cases.find(r => r.name === row.name && r.date === row.date)) {
+              S.cases.push({...row, id:Date.now()+Math.random(), adopted:true});
+            }
+          });
+          addLog('ok', `${f.name}：AI解析 ${rows.length}件完了`);
+        } else {
+          const row = parseCaseTextBasic(text, f.name);
+          const lu = row.landArea>0 ? Math.round(row.price/row.landArea) : 0;
+          const tu = (row.landArea+row.buildArea)>0 ? Math.round(row.price/(row.landArea+row.buildArea)) : 0;
+          S.cases.push({...row, id:Date.now()+Math.random(), adopted:true, _lu:lu, _tu:tu});
+          addLog('ok', `${f.name}：テキスト抽出完了`);
+        }
+      } else if (S.apiKey) {
+        // スキャンPDF → 画像解析・複数件
+        const rows = await parseCaseImageWithAI(f);
+        rows.forEach(row => {
+          if (!S.cases.find(r => r.name === row.name && r.date === row.date)) {
+            S.cases.push({...row, id:Date.now()+Math.random(), adopted:true});
+          }
+        });
+        addLog('ok', `${f.name}：AI画像解析 ${rows.length}件完了`);
+      } else {
+        S.cases.push({name:f.name.replace('.pdf',''),date:'',price:0,landArea:0,buildArea:0,age:0,id:Date.now()+Math.random(),adopted:true,_lu:0,_tu:0});
+        addLog('warn', `${f.name}：テキストなし・APIキー未設定。手入力してください`);
+      }
+    } catch(e) {
+      S.cases.push({name:f.name.replace('.pdf',''),date:'',price:0,landArea:0,buildArea:0,age:0,id:Date.now()+Math.random(),adopted:true,_lu:0,_tu:0});
+      addLog('warn', `${f.name}：抽出エラー（手入力推奨）`);
+    }
+    renderCaseTable();
+    calcAvg();
+  }
+
+  document.getElementById('cProgBar').style.width = '100%';
+  setTimeout(() => { progEl.style.display='none'; }, 500);
+}
+
+// テキストPDFをAIで複数件解析
+async function parseCaseTextWithAI(text, filename) {
+  const prompt = `以下は不動産成約事例のテキストデータです。中古一戸建ての成約事例を全件抽出してください。
+新築は除外してください。
+以下のJSON配列のみで返してください（他のテキスト不要）：
+[{"name":"所在地（市区町村＋丁目）","date":"YYYY/MM/DD","price":成約価格の数字（円）,"landArea":土地面積の数字（㎡）,"buildArea":建物面積の数字（㎡）,"age":築年数の数字},...]
+不明な項目は0。JSONのみ返答。
+
+テキスト：
+${text.slice(0, 3000)}`;
+
+  const raw = await callClaude([{role:'user',content:[{type:'text',text:prompt}]}],'不動産成約事例一括抽出。JSON配列のみ返答。');
+  try {
+    const jsonStr = raw.match(/\[[\s\S]*\]/)?.[0];
+    if (!jsonStr) throw new Error('no json');
+    const arr = JSON.parse(jsonStr);
+    return arr.map(d => ({
+      name: d.name || filename.replace('.pdf',''),
+      date: d.date || '',
+      price: parseInt(d.price)||0,
+      landArea: parseFloat(d.landArea)||0,
+      buildArea: parseFloat(d.buildArea)||0,
+      age: parseInt(d.age)||0,
+      _lu: d.landArea>0 ? Math.round(d.price/d.landArea) : 0,
+      _tu: (d.landArea+d.buildArea)>0 ? Math.round(d.price/(d.landArea+d.buildArea)) : 0,
+    }));
+  } catch(e) {
+    return [];
+  }
+}
+
+// スキャンPDFをAIで複数件解析
+async function parseCaseImageWithAI(file) {
+  const imgs = await pdfToImages(file, 3);
+  const content = [
+    ...imgs.map(b64=>({type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}})),
+    {type:'text',text:'不動産成約事例資料です。中古一戸建ての成約事例を全件抽出してください。新築は除外。\nJSON配列のみで返してください：\n[{"name":"所在地","date":"YYYY/MM/DD","price":成約価格数字,"landArea":土地面積数字,"buildArea":建物面積数字,"age":築年数数字},...]\n不明は0。JSONのみ。'}
+  ];
+  const raw = await callClaude([{role:'user',content}],'不動産成約事例一括抽出。JSON配列のみ返答。');
+  try {
+    const jsonStr = raw.match(/\[[\s\S]*\]/)?.[0];
+    if (!jsonStr) throw new Error('no json');
+    const arr = JSON.parse(jsonStr);
+    return arr.map(d => ({
+      name: d.name || file.name.replace('.pdf',''),
+      date: d.date || '',
+      price: parseInt(d.price)||0,
+      landArea: parseFloat(d.landArea)||0,
+      buildArea: parseFloat(d.buildArea)||0,
+      age: parseInt(d.age)||0,
+      _lu: d.landArea>0 ? Math.round(d.price/d.landArea) : 0,
+      _tu: (d.landArea+d.buildArea)>0 ? Math.round(d.price/(d.landArea+d.buildArea)) : 0,
+    }));
+  } catch(e) {
+    return [];
+  }
+}
+
+function parseCaseTextBasic(text, filename) {
+  const row = {name:filename.replace('.pdf',''),date:'',price:0,landArea:0,buildArea:0,age:0};
+
+  // 価格
+  let m = text.match(/成約(?:価格)?[^\d]*([\d,]+)\s*円/);
+  if (!m) m = text.match(/売買価格[^\d]*([\d,]+)\s*円/);
+  if (m) row.price = parseInt(m[1].replace(/,/g,''))||0;
+  else {
+    const wm = text.match(/([\d,]+)\s*万円/);
+    if (wm) row.price = parseInt(wm[1].replace(/,/g,''))*10000;
+  }
+
+  // 日付
+  m = text.match(/(20\d{2})[年\/\-](\d{1,2})[月\/\-](\d{1,2})/);
+  if (m) row.date = `${m[1]}/${m[2].padStart(2,'0')}/${m[3].padStart(2,'0')}`;
+
+  // 面積
+  m = text.match(/土地[^\d]*([\d.]+)\s*㎡/); if(m) row.landArea=parseFloat(m[1]);
+  m = text.match(/建物[^\d]*([\d.]+)\s*㎡/); if(m) row.buildArea=parseFloat(m[1]);
+
+  // 築年
+  let sm = text.match(/昭和\s*(\d+)/);
+  if (sm) { row.age = new Date().getFullYear()-(1925+parseInt(sm[1])); }
+  else {
+    sm = text.match(/平成\s*(\d+)/);
+    if (sm) { row.age = new Date().getFullYear()-(1988+parseInt(sm[1])); }
+    else {
+      sm = text.match(/令和\s*(\d+)/);
+      if (sm) { row.age = new Date().getFullYear()-(2018+parseInt(sm[1])); }
+    }
+  }
+
+  return row;
+}
+
+// テーブル描画
+function renderCaseTable() {
+  const tbody = document.getElementById('cBody');
+  if (!S.cases.length) { renderEmpty(); return; }
+
+  let rows = [...S.cases];
+  if (S.sortCol >= 0) {
+    const keys = [null,'name','date','price','landArea','buildArea','age','_lu','_tu'];
+    const k = keys[S.sortCol];
+    if (k) rows.sort((a,b) => {
+      let av=a[k]||0, bv=b[k]||0;
+      if (typeof av==='string') return S.sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+      return S.sortAsc ? av-bv : bv-av;
+    });
+  }
+
+  tbody.innerHTML = '';
+  rows.forEach(row => {
+    const lu = row.landArea>0 ? Math.round(row.price/row.landArea) : 0;
+    const tu = (row.landArea+row.buildArea)>0 ? Math.round(row.price/(row.landArea+row.buildArea)) : 0;
+    row._lu = lu; row._tu = tu;
+    const tr = document.createElement('tr');
+    tr.dataset.id = row.id;
+    if (!row.adopted) tr.classList.add('excl');
+    tr.innerHTML = `
+      <td><div class="cb-wrap"><input type="checkbox" ${row.adopted?'checked':''} onchange="toggleAdopt(${row.id},this.checked)"></div></td>
+      <td><input type="text" class="left" style="background:none;border:none;color:var(--text2);font-size:12px;width:160px;padding:0;" value="${esc(row.name)}" onchange="updRow(${row.id},'name',this.value)"></td>
+      <td style="text-align:center;"><input type="text" style="background:none;border:none;color:var(--text);font-size:12px;text-align:center;width:88px;" value="${esc(row.date)}" onchange="updRow(${row.id},'date',this.value)"></td>
+      <td>${row.price?fmt(row.price)+'円':'−'}</td>
+      <td>${row.landArea||'−'}㎡</td>
+      <td>${row.buildArea||'−'}㎡</td>
+      <td>${row.age||'−'}年</td>
+      <td>${lu?fmt(lu)+'円<div class="sub2">/㎡</div>':'−'}</td>
+      <td>${tu?fmt(tu)+'円<div class="sub2">/㎡</div>':'−'}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="delRow(${row.id})">削除</button></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderEmpty() {
+  document.getElementById('cBody').innerHTML =
+    `<tr><td colspan="10"><div class="empty"><div class="ei">🏘️</div><p>近隣成約事例のPDFをドロップしてください<br>複数ファイル一括対応 ／ 手入力追加も可</p></div></td></tr>`;
+}
+
+function toggleAdopt(id,v) {
+  const r=S.cases.find(r=>r.id===id); if(r) r.adopted=v;
+  const tr=document.querySelector(`tr[data-id="${id}"]`);
+  if(tr) tr.classList.toggle('excl',!v);
+  calcAvg();
+}
+function updRow(id,f,v){const r=S.cases.find(r=>r.id===id);if(r)r[f]=v;}
+function delRow(id){S.cases=S.cases.filter(r=>r.id!==id);renderCaseTable();calcAvg();}
+function checkAll(v){S.cases.forEach(r=>r.adopted=v);renderCaseTable();calcAvg();}
+function addManual(){
+  S.cases.push({id:Date.now()+Math.random(),name:'手入力事例',date:'',price:0,landArea:0,buildArea:0,age:0,adopted:true,_lu:0,_tu:0});
+  renderCaseTable();calcAvg();
+}
+
+function calcAvg() {
+  const ad = S.cases.filter(r=>r.adopted);
+  document.getElementById('adoptCnt').textContent = ad.length;
+  document.getElementById('avgRow').style.display = ad.length ? '' : 'none';
+  if (!ad.length) {
+    document.getElementById('avgLU').textContent='−';
+    document.getElementById('avgTU').textContent='−';
+    return;
+  }
+  const avg = k => ad.reduce((s,r)=>s+(r[k]||0),0)/ad.length;
+  const avP=Math.round(avg('price'));
+  const avL=avg('landArea').toFixed(1);
+  const avB=avg('buildArea').toFixed(1);
+  const avA=Math.round(avg('age'));
+  const avLU=Math.round(avg('_lu'));
+  const avTU=Math.round(avg('_tu'));
+  document.getElementById('avPrice').textContent = avP?fmt(avP)+'円':'−';
+  document.getElementById('avLand').textContent = avL+'㎡';
+  document.getElementById('avBuild').textContent = avB+'㎡';
+  document.getElementById('avAge').textContent = avA+'年';
+  document.getElementById('avLU').textContent = avLU?fmt(avLU)+'円/㎡':'−';
+  document.getElementById('avTU').textContent = avTU?fmt(avTU)+'円/㎡':'−';
+  document.getElementById('avgLU').textContent = avLU?fmt(avLU):'−';
+  document.getElementById('avgTU').textContent = avTU?fmt(avTU):'−';
+}
+
+function reflectAvg() {
+  const ad = S.cases.filter(r=>r.adopted);
+  if (!ad.length) { alert('採用事例がありません'); return; }
+  const avg = k => ad.reduce((s,r)=>s+(r[k]||0),0)/ad.length;
+  document.getElementById('refLandUnit').value = fmt(Math.round(avg('_lu')));
+  document.getElementById('refTotalUnit').value = fmt(Math.round(avg('_tu')));
+  document.getElementById('refAvgAge').value = Math.round(avg('age'));
+  document.getElementById('rResale').value='';
+  document.getElementById('rResaleLow').value='';
+  switchTab('tab1', document.querySelector('.tab-btn'));
+  calcAll();
+  addLog('ok', `近隣事例${ad.length}件の平均を査定に反映しました`);
+}
+
+function sortTbl(col) {
+  if (S.sortCol===col) S.sortAsc=!S.sortAsc;
+  else { S.sortCol=col; S.sortAsc=true; }
+  for(let i=1;i<=8;i++){
+    const el=document.getElementById('si'+i);
+    if(el) el.textContent = i===col?(S.sortAsc?'↑':'↓'):'↕';
+  }
+  renderCaseTable();
+}
+
+// 査定計算
+function calcAll() {
+  const gv = id => document.getElementById(id)?.value||'';
+  const basePrice = raw(gv('basePrice'));
+  const minPrice  = raw(gv('minPrice'));
+  const landArea  = parseFloat(gv('landArea'))||0;
+  const buildArea = parseFloat(gv('buildArea'))||0;
+  const buildAge  = parseFloat(gv('buildAge'))||0;
+  const refLU     = raw(gv('refLandUnit'));
+  const refTU     = raw(gv('refTotalUnit'));
+  const refAvgAge = parseFloat(gv('refAvgAge'))||0;
+  const reform    = raw(gv('reformCost'));
+  const otherCost = raw(gv('otherCost'));
+  // 粗利率（チャレンジブロック）
+  const mS  = parseFloat(gv('mSafe'))||20;
+  const mF  = parseFloat(gv('mFight'))||15;
+  const mC  = parseFloat(gv('mChallenge'))||10;
+  // 粗利率（売り切りブロック）
+  const mSL = parseFloat(gv('mSafeL'))||20;
+  const mFL = parseFloat(gv('mFightL'))||15;
+  const mCL = parseFloat(gv('mChallengeL'))||10;
+
+  if (!refLU && !refTU) { setDash(); return; }
+
+  // 築年補正（1年差=1%減、最低60%）
+  const ageDiff = buildAge - refAvgAge;
+  const ageCorr = Math.max(0.60, 1 - ageDiff*0.01);
+
+  // 再販売値
+  let resale = 0;
+  if (refTU>0 && (landArea+buildArea)>0) {
+    resale = Math.round(refTU*(landArea+buildArea)*ageCorr*(1+S.riskRate/100));
+  } else if (refLU>0 && landArea>0) {
+    resale = Math.round(refLU*landArea*(1+S.riskRate/100));
+  }
+  if (!resale) { setDash(); return; }
+
+  // 仕入推奨価格と粗利は下で計算
+
+  // 再販売値（手動入力されていれば優先）
+  const resaleHInput = raw(document.getElementById('rResale')?.value||'');
+  const resaleLInput = raw(document.getElementById('rResaleLow')?.value||'');
+  const resaleH = resaleHInput > 0 ? resaleHInput : resale;
+  const resaleL = resaleLInput > 0 ? resaleLInput : Math.round(resale * 0.9);
+
+  // 仕入推奨価格（再販値×(1-粗利率) - リフォーム - 諸費用）
+  const buy  = (r, m) => Math.round(r * (1 - m/100) - reform - otherCost);
+
+  // チャレンジブロック
+  const sBH  = buy(resaleH, mS);
+  const fBH  = buy(resaleH, mF);
+  const cBH  = buy(resaleH, mC);
+
+  // 売り切りブロック（独立計算）
+  const sBL  = buy(resaleL, mSL);
+  const fBL  = buy(resaleL, mFL);
+  const cBL  = buy(resaleL, mCL);
+
+  // 粗利目安 = 再販 - 仕入推奨 - リフォーム - 諸費用
+  const gross = (r, b) => r - b - reform - otherCost;
+
+  // 表示
+  if (!resaleHInput) document.getElementById('rResale').value = fmt(resaleH);
+  if (!resaleLInput) document.getElementById('rResaleLow').value = fmt(resaleL);
+  setText('sResale', `総合単価${fmt(refTU)}円/㎡ × ${(landArea+buildArea).toFixed(1)}㎡ × 築年補正${(ageCorr*100).toFixed(0)}% × リスク${S.riskRate>=0?'+':''}${S.riskRate}%`);
+
+  // チャレンジブロック
+  setText('rSafe',      fmt(sBH)+'円');
+  setText('rFight',     fmt(fBH)+'円');
+  setText('rChallenge', fmt(cBH)+'円');
+  showG('gSafeH',      gross(resaleH, sBH));
+  showG('gFightH',     gross(resaleH, fBH));
+  showG('gChallengeH', gross(resaleH, cBH));
+
+  // 売り切りブロック
+  setText('rSafeL',      fmt(sBL)+'円');
+  setText('rFightL',     fmt(fBL)+'円');
+  setText('rChallengeL', fmt(cBL)+'円');
+  showG('gSafeL',      gross(resaleL, sBL));
+  showG('gFightL',     gross(resaleL, fBL));
+  showG('gChallengeL', gross(resaleL, cBL));
+
+  document.getElementById('calcNote').innerHTML =
+    `【計算根拠】再販(チャレンジ) ${fmt(resaleH)}円 ／ 再販(売り切り) ${fmt(resaleL)}円<br>
+     仕入推奨 ＝ 再販 × (1 − 粗利率) − リフォーム${fmt(reform)}円 − 諸費用${fmt(otherCost)}円<br>
+     粗利目安 ＝ 再販売値 − 仕入推奨価格 − リフォーム − 諸費用`;
+}
+
+function showG(id, val) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = fmt(val)+'円';
+  el.style.color = val >= 0 ? 'var(--safe)' : 'var(--red)';
+}
+
+function setDash() {
+  ['rSafe','rFight','rChallenge','rSafeL','rFightL','rChallengeL',
+   'gSafeH','gFightH','gChallengeH','gSafeL','gFightL','gChallengeL'].forEach(id=>setText(id,'−'));
+  const rH = document.getElementById('rResale');
+  const rL = document.getElementById('rResaleLow');
+  if(rH) rH.value='';
+  if(rL) rL.value='';
+  document.getElementById('calcNote').textContent = '近隣事例の単価を入力すると査定結果が表示されます';
+}
+
+// 再販売値を自動計算に戻す
+function resetResale(type) {
+  if (type==='high') {
+    document.getElementById('rResale').value='';
+  } else {
+    document.getElementById('rResaleLow').value='';
+  }
+  calcAll();
+}
+
+// 再販売値を手動変更したときだけ粗利を再計算
+function calcGrossOnly() { calcAll(); }
+
+// リスク補正
+function toggleRisk(el) {
+  el.classList.toggle('active');
+  recalcRisk();
+}
+function recalcRisk() {
+  let t = 0;
+  document.querySelectorAll('.rtag.active').forEach(el => t += parseFloat(el.dataset.val)||0);
+  S.riskRate = t;
+  document.getElementById('riskTotal').textContent = (t>=0?'+':'')+t+'%';
+  calcAll();
+}
+
+// セグメントボタン
+function setSeg(el, hiddenId, val) {
+  el.closest('.seg').querySelectorAll('button').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById(hiddenId).value = val;
+  if (hiddenId==='road') {
+    document.querySelectorAll('.rtag').forEach(tag => {
+      if (tag.textContent.includes('旗竿')) tag.classList.toggle('active',val==='旗竿');
+    });
+    recalcRisk();
+  }
+}
+
+// ユーティリティ
+function fmt(n){return Math.round(n).toLocaleString('ja-JP');}
+function raw(s){return parseInt(String(s||'').replace(/[,，\s円]/g,''))||0;}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
+function fmtInput(el){const n=raw(el.value);if(n)el.value=fmt(n);}
+function setText(id,v){const el=document.getElementById(id);if(el)el.textContent=v;}
+
+function addLog(type, msg) {
+  const area = document.getElementById('logArea');
+  const cls = type==='ok'?'lok':type==='warn'?'lwarn':'lerr';
+  const t = new Date().toLocaleTimeString('ja-JP');
+  area.innerHTML += `<span class="${cls}">[${t}] ${msg}</span><br>`;
+  area.scrollTop = area.scrollHeight;
+}
+
+function showOv(msg,detail) {
+  document.getElementById('ovMsg').textContent=msg;
+  document.getElementById('ovDetail').textContent=detail;
+  document.getElementById('ov').classList.add('show');
+  document.getElementById('progBar').style.width='0%';
+}
+function hideOv(){document.getElementById('ov').classList.remove('show');}
+function setP(pct){document.getElementById('progBar').style.width=pct+'%';}
+
+// 地図をPNG保存
+function saveMapPNG() {
+  const mapEl = document.getElementById('leafletMap');
+  if (!mapEl || !leafletMap) { alert('地図タブを開いてから保存してください'); return; }
+  if (typeof html2canvas === 'undefined') {
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    sc.onload = () => doCapture(mapEl);
+    sc.onerror = () => {
+      // html2canvas失敗時はスクリーンショット案内
+      alert('自動保存できませんでした。\nWindowsキー＋Shift＋S でスクリーンショットを撮って貼り付けてください。');
+    };
+    document.head.appendChild(sc);
+  } else {
+    doCapture(mapEl);
+  }
+}
+
+function doCapture(mapEl) {
+  const btn = document.querySelector('[onclick="saveMapPNG()"]');
+  if (btn) { btn.textContent = '⏳ 保存中...'; btn.disabled = true; }
+  html2canvas(mapEl, {
+    useCORS: true,
+    allowTaint: true,
+    scale: 2,
+    backgroundColor: '#e8e0d8',
+    logging: false,
+  }).then(canvas => {
+    const link = document.createElement('a');
+    const loc = document.getElementById('location')?.value || '対象物件';
+    link.download = `エリアマップ_${loc}_${new Date().toLocaleDateString('ja-JP').replace(/\//g,'-')}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+    if (btn) { btn.innerHTML = '✅ 保存完了'; setTimeout(()=>{ btn.innerHTML='🖼️ 地図をPNG保存'; btn.disabled=false; }, 2000); }
+  }).catch(() => {
+    if (btn) { btn.innerHTML = '🖼️ 地図をPNG保存'; btn.disabled = false; }
+    alert('保存に失敗しました。\nWindowsキー＋Shift＋S でスクリーンショットを撮ってください。');
+  });
+}
+
+// PDF出力（地図込み）
+function buildStaticMapUrl() {
+  // 対象物件の座標を取得（所在地から推定 or MAP_DATAから）
+  const subjectLat = MAP_DATA.subject.lat;
+  const subjectLng = MAP_DATA.subject.lng;
+
+  // 採用済み近隣事例の座標
+  const adoptedCases = S.cases.filter(c => c.adopted && c.lat && c.lng);
+
+  // マーカー生成
+  let markers = `markers=color:0xe8b84b|label:対|${subjectLat},${subjectLng}`;
+  adoptedCases.forEach((c, i) => {
+    markers += `&markers=color:0x3ecf8e|label:${i+1}|${c.lat},${c.lng}`;
+  });
+
+  const url = `https://maps.googleapis.com/maps/api/staticmap?size=640x400&maptype=roadmap&language=ja&${markers}&key=${GOOGLE_MAPS_KEY}`;
+  return url;
+}
+
+function printPDF() {
+  const btn = document.getElementById('pdfBtn');
+  const printMapDiv = document.getElementById('printMapDiv');
+  const printMapUrl = document.getElementById('printMapUrl');
+
+  // 所在地からGoogleマップURLを生成してPDFに印字
+  const loc = document.getElementById('location')?.value || '';
+  if (loc && printMapDiv && printMapUrl) {
+    const gmapUrl = `https://maps.google.com/maps?q=${encodeURIComponent(loc)}&hl=ja`;
+    printMapUrl.textContent = gmapUrl;
+    printMapDiv.style.cssText = 'display:block !important;margin-top:8px;';
+  } else if (printMapDiv) {
+    printMapDiv.style.cssText = 'display:none !important;';
+  }
+
+  doPrint(null);
+}
+
+function doPrint(mapDataUrl) {
+  const printMapDiv = document.getElementById('printMapDiv');
+
+  const executePrint = () => {
+    const tabs = document.querySelectorAll('.tab-content');
+    const activeTab = document.querySelector('.tab-content.active');
+    tabs.forEach(t => t.classList.add('active'));
+    // ファイル名に所在地を入れる
+    const loc = document.getElementById('location')?.value || '';
+    const originalTitle = document.title;
+    if (loc) document.title = `査定レポート_${loc}_HOUSE MARKET`;
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => {
+        document.title = originalTitle;
+        tabs.forEach(t => t.classList.remove('active'));
+        if (activeTab) activeTab.classList.add('active');
+        // 印刷後にprintMapDivをリセット
+        if (printMapDiv) printMapDiv.style.cssText = 'display:none !important;margin-top:8px;';
+      }, 500);
+    }, 500);
+  };
+
+  if (mapDataUrl && printMapDiv) {
+    const old = document.getElementById('printMapImg');
+    if (old) old.remove();
+    const img = document.createElement('img');
+    img.id = 'printMapImg';
+    img.style.cssText = 'width:100%;border-radius:6px;border:1px solid #ccc;display:block;';
+    printMapDiv.appendChild(img);
+    img.onload = () => {
+      printMapDiv.style.cssText = 'display:block !important;margin-top:8px;';
+      executePrint();
+    };
+    img.onerror = () => {
+      printMapDiv.style.cssText = 'display:block !important;margin-top:8px;';
+      executePrint();
+    };
+    img.src = mapDataUrl;
+  } else {
+    executePrint();
+  }
+}
+
+// ======================================
+// プリセットDB（読み込み済みPDFの内容を事前登録）
+// ======================================
+const PRESETS = {
+  'NAG_R07K00203_1': {
+    '売却基準価額': '11750000',
+    '買受可能価額': '9400000',
+    '土地面積': '228.48',
+    '建物面積': '131.65',
+    '築年': '平成12年',
+    '所在地': '瀬戸市すみれ台二丁目88番',
+    '用途地域': '第一種低層住居専用地域',
+    '備考': '残置物あり、空き家（本件所有者が占有）、水回りリフォーム済（時期不明）、アスベスト要注意',
+  },
+};
+
+// 近隣事例プリセット（PDF読み込み済み）
+const CASE_PRESETS = {
+  // ── REINS_IP0319-1.pdf：すみれ台エリア中古全件
+  'REINS_IP0319-1': [
+    { name:'すみれ台5丁目（H16中古）', date:'2021/10/30', price:26800000, landArea:247.40, buildArea:190.37, age:2026-2004 },
+    { name:'すみれ台5丁目（H8中古）',  date:'2021/05/31', price:17500000, landArea:204.00, buildArea:140.77, age:2026-1996 },
+    { name:'すみれ台3丁目（昭46中古）',date:'2019/07/21', price:14300000, landArea:225.80, buildArea:183.90, age:2026-1971 },
+    { name:'すみれ台2丁目（昭49中古）',date:'2017/04/15', price:12800000, landArea:216.55, buildArea:110.25, age:2026-1974 },
+    { name:'すみれ台4丁目（H8中古）',  date:'2009/12/20', price:19500000, landArea:155.46, buildArea:109.30, age:2026-1996 },
+    { name:'すみれ台3丁目（昭45中古）',date:'2009/07/30', price:22800000, landArea:328.58, buildArea:162.40, age:2026-1970 },
+    { name:'すみれ台1丁目（昭49中古）',date:'2005/12/22', price:16500000, landArea:208.88, buildArea:115.93, age:2026-1974 },
+    { name:'すみれ台4丁目（H8中古②）',date:'2004/07/26', price:24800000, landArea:155.46, buildArea:109.30, age:2026-1996 },
+  ],
+  // ── REINS_IP0319-2.pdf：ききょう台中古1件
+  'REINS_IP0319-2': [
+    { name:'ききょう台1丁目（昭54中古）', date:'2023/09/22', price:22020000, landArea:258.44, buildArea:119.65, age:2026-1979 },
+  ],
+  // ── REINS_IP0319-3.pdf：さつき台中古全件
+  'REINS_IP0319-3': [
+    { name:'さつき台1丁目（H24中古）', date:'2024/04/13', price:21990000, landArea:130.38, buildArea:84.46,  age:2026-2012 },
+    { name:'さつき台2丁目（昭62中古）',date:'2021/09/26', price:25000000, landArea:311.24, buildArea:155.03, age:2026-1987 },
+    { name:'さつき台2丁目（昭47中古）',date:'2020/12/20', price:19000000, landArea:312.22, buildArea:120.11, age:2026-1972 },
+    { name:'さつき台4丁目（H1中古）',  date:'2019/06/22', price:13400000, landArea:195.62, buildArea:192.51, age:2026-1989 },
+    { name:'さつき台2丁目（H10中古）', date:'2015/09/11', price:33800000, landArea:326.42, buildArea:175.47, age:2026-1998 },
+    { name:'さつき台4丁目（H7中古）',  date:'2015/07/09', price:24000000, landArea:227.90, buildArea:84.46,  age:2026-1995 },
+    { name:'さつき台1丁目（昭60中古）',date:'2010/01/28', price:23300000, landArea:301.20, buildArea:128.09, age:2026-1985 },
+    { name:'さつき台5丁目（H3中古）',  date:'2009/02/20', price:30800000, landArea:287.99, buildArea:188.45, age:2026-1991 },
+    { name:'さつき台4丁目（昭45中古）',date:'2004/11/06', price:18600000, landArea:247.47, buildArea:115.31, age:2026-1970 },
+    { name:'さつき台1丁目（昭48中古）',date:'2003/05/04', price:24800000, landArea:301.87, buildArea:119.89, age:2026-1973 },
+    { name:'さつき台1丁目（昭47中古）',date:'2003/03/01', price:38000000, landArea:321.19, buildArea:147.74, age:2026-1972 },
+  ],
+  // ── zmn_list_20260319115329.pdf：すみれ台詳細（REINS_IP0319-1と同内容）
+  'zmn_list_20260319115329': [
+    { name:'すみれ台5丁目（H16中古）', date:'2021/10/30', price:26800000, landArea:247.40, buildArea:190.37, age:2026-2004 },
+    { name:'すみれ台5丁目（H8中古）',  date:'2021/05/31', price:17500000, landArea:204.00, buildArea:140.77, age:2026-1996 },
+    { name:'すみれ台3丁目（昭46中古）',date:'2019/07/21', price:14300000, landArea:225.80, buildArea:183.90, age:2026-1971 },
+    { name:'すみれ台2丁目（昭49中古）',date:'2017/04/15', price:12800000, landArea:216.55, buildArea:110.25, age:2026-1974 },
+    { name:'すみれ台4丁目（H8中古）',  date:'2009/12/20', price:19500000, landArea:155.46, buildArea:109.30, age:2026-1996 },
+    { name:'すみれ台3丁目（昭45中古）',date:'2009/07/30', price:22800000, landArea:328.58, buildArea:162.40, age:2026-1970 },
+    { name:'すみれ台1丁目（昭49中古）',date:'2005/12/22', price:16500000, landArea:208.88, buildArea:115.93, age:2026-1974 },
+    { name:'すみれ台4丁目（H8中古②）',date:'2004/07/26', price:24800000, landArea:155.46, buildArea:109.30, age:2026-1996 },
+  ],
+  // ── zmn_list_20260319115758.pdf：さつき台・ききょう台詳細
+  'zmn_list_20260319115758': [
+    { name:'さつき台1丁目（H24中古）', date:'2024/04/13', price:21990000, landArea:130.38, buildArea:84.46,  age:2026-2012 },
+    { name:'さつき台2丁目（昭62中古）',date:'2021/09/26', price:25000000, landArea:311.24, buildArea:155.03, age:2026-1987 },
+    { name:'さつき台2丁目（昭47中古）',date:'2020/12/20', price:19000000, landArea:312.22, buildArea:120.11, age:2026-1972 },
+    { name:'さつき台4丁目（H1中古）',  date:'2019/06/22', price:13400000, landArea:195.62, buildArea:192.51, age:2026-1989 },
+    { name:'さつき台2丁目（H10中古）', date:'2015/09/11', price:33800000, landArea:326.42, buildArea:175.47, age:2026-1998 },
+    { name:'さつき台4丁目（H7中古）',  date:'2015/07/09', price:24000000, landArea:227.90, buildArea:84.46,  age:2026-1995 },
+  ],
+  // ── 200124581558.pdf：ききょう台詳細
+  '200124581558': [
+    { name:'ききょう台1丁目（昭54中古）', date:'2023/09/22', price:22020000, landArea:258.44, buildArea:119.65, age:2026-1979 },
+  ],
+};
+
+// 地図用データ（対象物件＋近隣事例）
+const MAP_DATA = {
+  subject: { name:'【対象】瀬戸市すみれ台2丁目88番', lat:35.2285, lng:137.0832, price:'売却基準価額 1,175万円', color:'#e8b84b' },
+  cases: [
+    { name:'さつき台1丁目（H24中古）R6.4成約', lat:35.2255, lng:137.0858, price:'2,199万円 130㎡', color:'#3ecf8e' },
+    { name:'さつき台2丁目（昭62中古）R3.9成約', lat:35.2270, lng:137.0875, price:'2,500万円 311㎡', color:'#3ecf8e' },
+    { name:'ききょう台1丁目（昭54中古）R5.9成約', lat:35.2310, lng:137.0795, price:'2,202万円 258㎡', color:'#4a9eff' },
+    { name:'すみれ台5丁目（H16中古）R3.10成約', lat:35.2260, lng:137.0810, price:'2,680万円 247㎡', color:'#4a9eff' },
+    { name:'さつき台2丁目（昭47中古）R2.12成約', lat:35.2268, lng:137.0870, price:'1,900万円 312㎡', color:'#4a9eff' },
+    { name:'さつき台4丁目（H1中古）R1.6成約', lat:35.2240, lng:137.0890, price:'1,340万円 196㎡', color:'#8b93b0' },
+  ]
+};
+
+function tryPreset(filename) {
+  // スペース→アンダースコアに統一してキーマッチング
+  const key = filename.replace(/\.pdf$/i,'').trim().replace(/\s+/g,'_');
+
+  // 競売物件プリセット
+  const aData = PRESETS[key];
+  if (aData) {
+    applyExtracted(aData);
+    addLog('ok', `📋 ${filename} → 物件情報 自動入力完了`);
+    const prev = document.getElementById('extractPreview');
+    prev.style.display = 'block';
+    prev.textContent = '✅ プリセット入力済（読込済みPDFの内容）\n' + JSON.stringify(aData, null, 2);
+    document.getElementById('statusDot').classList.add('ok');
+    document.getElementById('statusTxt').textContent = 'プリセット読込済';
+    document.getElementById('analyzeHint').textContent = '✅ 自動入力済。内容を確認してください';
+    // ボタンエリアを非表示
+    const btnArea = document.getElementById('analyzeBtnArea');
+    if (btnArea) btnArea.style.display = 'none';
+    document.getElementById('logArea').style.display = 'none';
+    return;
+  }
+
+  // 近隣事例プリセット
+  const cData = CASE_PRESETS[key];
+  if (cData) {
+    let added = 0;
+    cData.forEach(row => {
+      if (!S.cases.find(r => r.name === row.name)) {
+        const lu = row.landArea > 0 ? Math.round(row.price / row.landArea) : 0;
+        const tu = (row.landArea + row.buildArea) > 0 ? Math.round(row.price / (row.landArea + row.buildArea)) : 0;
+        S.cases.push({ ...row, id: Date.now()+Math.random(), adopted:true, _lu:lu, _tu:tu });
+        added++;
+      }
+    });
+    renderCaseTable();
+    calcAvg();
+    addLog('ok', `📋 ${filename} → 近隣事例 ${added}件 自動登録完了`);
+    // 地図も更新
+    renderMap();
+  }
+}
+
+// ======================================
+// 地図描画（SVG概略地図）
+// ======================================
+
+// 全読込済み近隣事例データ（地図・サマリー用）
+const ALL_CASES = [
+  { name:'さつき台1丁目（H24中古）', date:'2024/04/13', price:21990000, landArea:130.38, buildArea:84.46,  age:14,  lat:35.2252, lng:137.0861, type:'中古' },
+  { name:'ききょう台1丁目（昭54中古）', date:'2023/09/22', price:22020000, landArea:258.44, buildArea:119.65, age:47, lat:35.2318, lng:137.0793, type:'中古' },
+  { name:'すみれ台5丁目（H16中古）', date:'2021/10/30', price:26800000, landArea:247.40, buildArea:190.37, age:22,  lat:35.2258, lng:137.0808, type:'中古' },
+  { name:'さつき台2丁目（昭62中古）', date:'2021/09/26', price:25000000, landArea:311.24, buildArea:155.03, age:39, lat:35.2272, lng:137.0873, type:'中古' },
+  { name:'すみれ台5丁目（H8中古）',  date:'2021/05/31', price:17500000, landArea:204.00, buildArea:140.77, age:30, lat:35.2254, lng:137.0812, type:'中古' },
+  { name:'さつき台2丁目（昭47中古）', date:'2020/12/20', price:19000000, landArea:312.22, buildArea:120.11, age:54, lat:35.2270, lng:137.0869, type:'中古' },
+  { name:'さつき台4丁目（H1中古）',  date:'2019/06/22', price:13400000, landArea:195.62, buildArea:192.51, age:37, lat:35.2240, lng:137.0888, type:'中古' },
+  { name:'すみれ台3丁目（昭46中古）', date:'2019/07/21', price:14300000, landArea:225.80, buildArea:183.90, age:55, lat:35.2268, lng:137.0820, type:'中古' },
+  { name:'すみれ台2丁目（H2中古）',  date:'2017/04/15', price:12800000, landArea:216.55, buildArea:110.25, age:52, lat:35.2278, lng:137.0828, type:'中古' },
+  { name:'さつき台4丁目（H7中古）',  date:'2015/07/09', price:24000000, landArea:227.90, buildArea:84.46,  age:31, lat:35.2243, lng:137.0885, type:'中古' },
+  { name:'さつき台2丁目（H10中古）', date:'2015/09/11', price:33800000, landArea:326.42, buildArea:175.47, age:28, lat:35.2268, lng:137.0876, type:'中古' },
+];
+
+const SUBJECT = { name:'【対象物件】', lat:35.2285, lng:137.0832, price:'' };
+
+// 住所からジオコーディング（Nominatim）してSUBJECT座標を更新
+async function geocodeSubject(address) {
+  if (!address) return;
+  // 詳細住所 → 市区町村レベル → 都道府県レベル の順でフォールバック
+  const queries = [
+    '日本 ' + address,
+    address.replace(/[0-9０-９]+番地?[0-9０-９]*/, '').trim(),  // 番地除去
+    (address.match(/(.+?[市区町村])/)?.[1] || address),          // 市区町村まで
+  ];
+  for (const q of queries) {
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&countrycodes=jp`,
+        { headers: { 'Accept-Language': 'ja' } }
+      );
+      const data = await res.json();
+      if (data && data.length > 0) {
+        const best = data.reduce((a,b) => parseFloat(a.importance||0) > parseFloat(b.importance||0) ? a : b);
+        SUBJECT.lat = parseFloat(best.lat);
+        SUBJECT.lng = parseFloat(best.lon);
+        SUBJECT.name = '【対象】' + address;
+        addLog('ok', `ジオコーディング完了 [${q}] → (${SUBJECT.lat.toFixed(5)}, ${SUBJECT.lng.toFixed(5)})`);
+        if (document.getElementById('tab3')?.classList.contains('active')) {
+          initLeafletMap();
+        }
+        return true;
+      }
+    } catch(e) { /* 次のクエリへ */ }
+  }
+  addLog('warn', '住所の座標取得に失敗しました（地図タブで手動確認してください）');
+  return false;
+}
+
+let leafletMap = null;
+let leafletLoaded = false;
+
+function renderMap() {
+  renderMapCaseTable();
+  // Leafletが未ロードなら動的に読み込む
+  if (typeof L === 'undefined') {
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    document.head.appendChild(css);
+    const js = document.createElement('script');
+    js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    js.onload = () => initLeafletMap();
+    js.onerror = () => {
+      document.getElementById('leafletMap').innerHTML =
+        '<div style="padding:40px;text-align:center;color:var(--text2);">⚠️ 地図の読み込みにはインターネット接続が必要です</div>';
+    };
+    document.head.appendChild(js);
+  } else {
+    initLeafletMap();
+  }
+}
+
+function initLeafletMap() {
+  const container = document.getElementById('leafletMap');
+  if (!container) return;
+
+  // 既存マップを破棄して再生成
+  if (leafletMap) {
+    leafletMap.remove();
+    leafletMap = null;
+  }
+
+  // Leafletマップ初期化
+  leafletMap = L.map('leafletMap', { zoomControl: true }).setView(
+    [SUBJECT.lat, SUBJECT.lng], 14
+  );
+
+  // OpenStreetMapタイル
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 19,
+  }).addTo(leafletMap);
+
+  // 対象物件マーカー（★ 金色）
+  const subjectIcon = L.divIcon({
+    className: '',
+    html: `<div style="
+      width:36px;height:36px;border-radius:50%;
+      background:#e8b84b;border:3px solid #fff;
+      display:flex;align-items:center;justify-content:center;
+      font-size:18px;font-weight:900;color:#000;
+      box-shadow:0 2px 8px rgba(0,0,0,0.5);">★</div>`,
+    iconSize: [36, 36],
+    iconAnchor: [18, 18],
+    popupAnchor: [0, -20],
+  });
+
+  L.marker([SUBJECT.lat, SUBJECT.lng], { icon: subjectIcon })
+    .addTo(leafletMap)
+    .bindPopup(`
+      <div style="font-family:sans-serif;min-width:180px;">
+        <div style="font-weight:700;color:#e8b84b;margin-bottom:6px;">★ 対象物件</div>
+        <div style="font-size:13px;margin-bottom:4px;">${document.getElementById('location')?.value || SUBJECT.name}</div>
+        <div style="font-size:12px;color:#666;">売却基準価額：${document.getElementById('basePrice')?.value || '―'}円</div>
+        <div style="font-size:12px;color:#666;">買受可能価額：${document.getElementById('minPrice')?.value || '―'}円</div>
+        <div style="font-size:12px;color:#666;">土地：${document.getElementById('landArea')?.value || '―'}㎡ 建物：${document.getElementById('buildArea')?.value || '―'}㎡</div>
+      </div>`, { maxWidth: 240 })
+    .openPopup();
+
+  // 事例マーカー（S.casesにデータがあればそちらを使う）
+  const mapCases = S.cases.length > 0 ? S.cases.filter(c => c.lat && c.lng) : ALL_CASES;
+  mapCases.forEach((c, i) => {
+    const lu = c.landArea > 0 ? Math.round(c.price / c.landArea) : 0;
+    const tu = (c.landArea + c.buildArea) > 0 ? Math.round(c.price / (c.landArea + c.buildArea)) : 0;
+    const col = c.name.includes('さつき') ? '#3ecf8e'
+              : c.name.includes('ききょう') ? '#4a9eff'
+              : '#9b8ec4';
+
+    const caseIcon = L.divIcon({
+      className: '',
+      html: `<div style="
+        width:30px;height:30px;border-radius:50%;
+        background:${col};border:2.5px solid #fff;
+        display:flex;align-items:center;justify-content:center;
+        font-size:12px;font-weight:700;color:#fff;
+        box-shadow:0 2px 6px rgba(0,0,0,0.4);">${i + 1}</div>`,
+      iconSize: [30, 30],
+      iconAnchor: [15, 15],
+      popupAnchor: [0, -18],
+    });
+
+    L.marker([c.lat, c.lng], { icon: caseIcon })
+      .addTo(leafletMap)
+      .bindPopup(`
+        <div style="font-family:sans-serif;min-width:200px;">
+          <div style="font-weight:700;margin-bottom:6px;">No.${i+1} ${c.name}</div>
+          <table style="font-size:12px;width:100%;border-collapse:collapse;">
+            <tr><td style="color:#666;padding:2px 0;">成約日</td><td style="text-align:right;">${c.date}</td></tr>
+            <tr><td style="color:#666;padding:2px 0;">成約価格</td><td style="text-align:right;font-weight:700;">${(c.price/10000).toLocaleString()}万円</td></tr>
+            <tr><td style="color:#666;padding:2px 0;">土地面積</td><td style="text-align:right;">${c.landArea}㎡</td></tr>
+            <tr><td style="color:#666;padding:2px 0;">建物面積</td><td style="text-align:right;">${c.buildArea}㎡</td></tr>
+            <tr><td style="color:#666;padding:2px 0;">築年数</td><td style="text-align:right;">${c.age}年</td></tr>
+            <tr><td style="color:#666;padding:2px 0;">土地単価</td><td style="text-align:right;color:green;font-weight:700;">${lu.toLocaleString()}円/㎡</td></tr>
+            <tr><td style="color:#666;padding:2px 0;">総合単価</td><td style="text-align:right;color:green;font-weight:700;">${tu.toLocaleString()}円/㎡</td></tr>
+          </table>
+        </div>`, { maxWidth: 260 });
+  });
+
+  // 全マーカーが収まるように表示範囲を調整
+  const allLatLngs = [
+    [SUBJECT.lat, SUBJECT.lng],
+    ...mapCases.map(c => [c.lat, c.lng])
+  ];
+  leafletMap.fitBounds(allLatLngs, { padding: [40, 40] });
+}
+
+function showPinInfo(idx) {
+  // Leaflet版では不要（ポップアップで代替）
+}
+
+function addCaseFromMap(idx) {
+  const c = ALL_CASES[idx];
+  if (!S.cases.find(r=>r.name===c.name)) {
+    S.cases.push({...c, id:Date.now()+Math.random(), adopted:true, _lu:0, _tu:0});
+    renderCaseTable(); calcAvg();
+    addLog('ok', `${c.name} を事例一覧に追加しました`);
+  }
+}
+
+function renderMapCaseTable() {
+  const tbody = document.getElementById('mapCaseBody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  let totP=0,totL=0,totB=0,totA=0,totLU=0,totTU=0,n=0;
+  // S.casesが空ならALL_CASESを使う（地図用固定データ）
+  // S.casesにデータがあればそちらを優先表示
+  const displayCases = S.cases.length > 0 ? S.cases : ALL_CASES;
+  displayCases.forEach((c,i) => {
+    const lu = c.landArea>0 ? Math.round(c.price/c.landArea) : 0;
+    const tu = (c.landArea+c.buildArea)>0 ? Math.round(c.price/(c.landArea+c.buildArea)) : 0;
+    totP+=c.price; totL+=c.landArea; totB+=c.buildArea; totA+=c.age; totLU+=lu; totTU+=tu; n++;
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td style="text-align:left;color:var(--text2);font-size:12px;"><span style="color:var(--accent);font-weight:700;margin-right:6px;">${i+1}</span>${c.name}</td>
+      <td style="font-size:12px;">${c.date}</td>
+      <td>${fmt(c.price)}円</td>
+      <td>${c.landArea}㎡</td>
+      <td>${c.buildArea}㎡</td>
+      <td>${c.age}年</td>
+      <td style="color:var(--safe);">${fmt(lu)}円/㎡</td>
+      <td style="color:var(--safe);">${fmt(tu)}円/㎡</td>`;
+    tbody.appendChild(tr);
+  });
+  if(n>0){
+    const s=id=>document.getElementById(id);
+    s('mAvgP').textContent=fmt(Math.round(totP/n))+'円';
+    s('mAvgL').textContent=(totL/n).toFixed(1)+'㎡';
+    s('mAvgB').textContent=(totB/n).toFixed(1)+'㎡';
+    s('mAvgA').textContent=Math.round(totA/n)+'年';
+    s('mAvgLU').textContent=fmt(Math.round(totLU/n))+'円/㎡';
+    s('mAvgTU').textContent=fmt(Math.round(totTU/n))+'円/㎡';
+  }
+}
+</script>
+</body>
+</html>

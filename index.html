@@ -1077,7 +1077,7 @@ async function analyzeAuction() {
       const allImgs = [];
       for (let i=0; i<Math.min(S.aFiles.length,3); i++) {
         setP(50 + 20*i);
-        const imgs = await pdfToImages(S.aFiles[i], 10);
+        const imgs = await pdfToImages(S.aFiles[i], 20);
         allImgs.push(...imgs);
       }
       setP(75);
@@ -1105,7 +1105,7 @@ async function analyzeAuction() {
   "買受可能価額": "円単位の数字のみ（売却基準価額の約80%のもの。保証額ではない）",
   "土地面積": "㎡の数字のみ（物件目録の地積欄。小数点付き例：122.94）",
   "建物面積": "㎡の数字のみ（床面積1階＋2階合計。小数点付き例：98.19）",
-  "築年": "評価書の建物概況欄にある建築年月日(登記記載)から元号+年数を抽出(例:平成9年、昭和52年)。なければ経過年数欄の数字を使い経過○年と返す",
+  "築年": "評価書の建物概況欄にある建築年月日(登記記載)から元号+年数を抽出(例:平成9年、昭和52年)。なければ現況調査報告書の経過年数欄の数字を使い経過○年と返す",
   "所在地": "市区町村以降の住所",
   "用途地域": "用途地域名",
   "備考": "占有・残置物・再建築不可・接道不可など特記事項"
@@ -1217,7 +1217,6 @@ function parseAuctionTextFull(text) {
 
   // 築年（平成・令和・昭和）
   m = text.match(/(?:建築年月日|新築)[^\n]*?((?:昭和|平成|令和)\s*[0-9]+\s*年)/);
-  if (!m) m = text.match(/建築年月日[^\n]*((?:昭和|平成|令和)\s*[0-9]+\s*年)/);
   if (!m) m = text.match(/(平成|令和|昭和)\s*([0-9]+)\s*年\s*[0-9]+\s*月.*?新築/);
   if (!m) m = text.match(/経過\s*年\s*数[^\d]*約\s*([0-9]+)\s*年/);
   if (m) {
@@ -1452,7 +1451,7 @@ ${text.slice(0, 3000)}`;
 
 // スキャンPDFをAIで複数件解析
 async function parseCaseImageWithAI(file) {
-  const imgs = await pdfToImages(file, 3);
+  const imgs = await pdfToImages(file, 5);
   const content = [
     ...imgs.map(b64=>({type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}})),
     {type:'text',text:'不動産成約事例資料です。中古一戸建ての成約事例を全件抽出してください。新築は除外。\nJSON配列のみで返してください：\n[{"name":"所在地","date":"YYYY/MM/DD","price":成約価格数字,"landArea":土地面積数字,"buildArea":建物面積数字,"age":築年数数字},...]\n不明は0。JSONのみ。'}

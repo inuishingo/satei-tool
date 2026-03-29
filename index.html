@@ -1087,23 +1087,29 @@ async function analyzeAuction() {
         ...allImgs.slice(0,10).map(b64=>({
           type:'image', source:{type:'base64',media_type:'image/jpeg',data:b64}
         })),
-        {type:'text', text:`競売3点セット（物件明細書・現況調査報告書・評価書）のPDFです。
+        {type:'text', text:`あなたは不動産競売資料の解析専門家です。
+競売3点セット（物件明細書・現況調査報告書・評価書）のPDFです。
+
+【金額の読み方 - 最重要】
+競売公告の表には必ず以下の3つの金額が記載されています：
+- 「売却基準価額」= 3つの中で最も大きい金額（例：4,770,000円）
+- 「買受可能価額」= 売却基準価額の約80%（例：3,816,000円）
+- 「買受申出保証額」= 最も小さい金額（例：954,000円）→ 絶対に使わない
+
+売却基準価額 > 買受可能価額 > 買受申出保証額 の順番です。
+買受可能価額は売却基準価額の80%前後です。この関係を必ず確認してください。
+
 以下の項目をJSONのみで返してください（前後の説明不要）：
 {
-  "売却基準価額": "円単位の数字のみ（競売の基準となる価格。最も高い価格）",
-  "買受可能価額": "円単位の数字のみ（売却基準価額の約80%の価格。入札できる最低価格。「買受申出保証額」「保証額」とは別の項目）",
-  "土地面積": "㎡の数字のみ（物件目録の地積欄に記載。通常小数点付きの数字例：122.94。整数のみの大きな数字は金額なので無視すること）",
-  "建物面積": "㎡の数字のみ（床面積欄の1階＋2階の合計。通常小数点付きの数字例：98.19）",
+  "売却基準価額": "円単位の数字のみ（3つの金額のうち最大のもの）",
+  "買受可能価額": "円単位の数字のみ（売却基準価額の約80%のもの。保証額ではない）",
+  "土地面積": "㎡の数字のみ（物件目録の地積欄。小数点付き例：122.94）",
+  "建物面積": "㎡の数字のみ（床面積1階＋2階合計。小数点付き例：98.19）",
   "築年": "昭和○年 または 平成○年 または 令和○年",
   "所在地": "市区町村以降の住所",
   "用途地域": "用途地域名",
   "備考": "占有・残置物・再建築不可・接道不可など特記事項"
 }
-
-【重要】公告表には通常3つの金額が並ぶ：
-1. 売却基準価額（最大）→ "売却基準価額"に設定
-2. 買受可能価額（売却基準価額の約80%）→ "買受可能価額"に設定
-3. 買受申出保証額（最小・保証金）→ 無視
 
 不明は空文字。JSONのみ。`}
       ];
@@ -1266,6 +1272,33 @@ function applyExtracted(data) {
 
   set('basePrice','売却基準価額',true);
   set('minPrice','買受可能価額',true);
+
+  // 金額の整合チェック：売却基準価額 > 買受可能価額 の関係を確認・修正
+  const bpEl = document.getElementById('basePrice');
+  const mpEl = document.getElementById('minPrice');
+  if (bpEl && mpEl && bpEl.value && mpEl.value) {
+    const bp = parseInt(bpEl.value.replace(/,/g,''));
+    const mp = parseInt(mpEl.value.replace(/,/g,''));
+    if (bp > 0 && mp > 0) {
+      const ratio = mp / bp;
+      if (ratio < 0.65 || ratio > 0.95) {
+        // 比率がおかしい→買受可能価額をbp×80%で補正
+        const corrected = Math.round(bp * 0.8);
+        mpEl.value = corrected.toLocaleString('ja-JP');
+        addLog('warn', `買受可能価額を自動補正: ${corrected.toLocaleString()}円（売却基準価額×80%）`);
+      }
+      // 売却基準価額 < 買受可能価額 なら入れ替え
+      if (bp < mp) {
+        const tmp = bpEl.value;
+        bpEl.value = mpEl.value;
+        mpEl.value = tmp;
+        // 入れ替え後に再度80%チェック
+        const newBp = parseInt(bpEl.value.replace(/,/g,''));
+        mpEl.value = Math.round(newBp * 0.8).toLocaleString('ja-JP');
+        addLog('warn', `売却基準価額と買受可能価額を入れ替えました`);
+      }
+    }
+  }
 
   // 土地面積・建物面積は範囲チェック（10〜3000㎡かつ小数点付きを優先）
   const setArea = (id, key) => {

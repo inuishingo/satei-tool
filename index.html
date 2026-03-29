@@ -1077,14 +1077,14 @@ async function analyzeAuction() {
       const allImgs = [];
       for (let i=0; i<Math.min(S.aFiles.length,3); i++) {
         setP(50 + 20*i);
-        const imgs = await pdfToImages(S.aFiles[i], 3);
+        const imgs = await pdfToImages(S.aFiles[i], 6);
         allImgs.push(...imgs);
       }
       setP(75);
       addLog('ok', `${allImgs.length}ページ → Claude API送信`);
 
       const content = [
-        ...allImgs.slice(0,6).map(b64=>({
+        ...allImgs.slice(0,10).map(b64=>({
           type:'image', source:{type:'base64',media_type:'image/jpeg',data:b64}
         })),
         {type:'text', text:`競売3点セット（物件明細書・現況調査報告書・評価書）のPDFです。

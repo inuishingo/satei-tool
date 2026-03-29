@@ -765,11 +765,11 @@ tfoot .avg-row td{background:rgba(232,184,75,.07);font-weight:700;color:var(--ac
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-const BUILT_IN_KEY = "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";
+const BUILT_IN_KEY = "";
 const GOOGLE_MAPS_KEY = "AIzaSyCZ-FYVmJ3moOkh6ZWxXBa4OADMvPEFE7c";
 
 const S = {
-  apiKey: BUILT_IN_KEY,
+  apiKey: localStorage.getItem("hm_apikey") || BUILT_IN_KEY,
   riskRate: 0,
   aFiles: [], oFiles: [], cFiles: [],
   cases: [],
@@ -861,9 +861,15 @@ function resetAll() {
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('hdrDate').textContent =
     new Date().toLocaleDateString('ja-JP',{year:'numeric',month:'long',day:'numeric'});
-  // APIキーは埋め込み済み - 入力バーを非表示
+  // APIキーをlocalStorageから復元
+  const savedKey = localStorage.getItem('hm_apikey');
+  if (savedKey) {
+    S.apiKey = savedKey;
+    const apiKeyEl = document.getElementById('apiKey');
+    if (apiKeyEl) apiKeyEl.value = savedKey;
+  }
   const apiBar = document.getElementById('apiBar');
-  if (apiBar) apiBar.style.display = 'none';
+  if (apiBar) apiBar.style.display = 'flex';
   updateApiStatus();
   renderEmpty();
   setDash();

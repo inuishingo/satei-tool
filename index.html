@@ -833,6 +833,38 @@ function resetAll() {
   // 査定結果をダッシュに
   setDash();
 
+  // リスクタグを全解除（.rtagクラス対応）
+  document.querySelectorAll('.rtag.active').forEach(el => el.classList.remove('active'));
+
+  // 地図タブ：Leafletマップを破棄してリセット
+  if (typeof leafletMap !== 'undefined' && leafletMap) {
+    leafletMap.remove();
+    leafletMap = null;
+  }
+  // 地図タブのSUBJECT座標をデフォルトに戻す
+  if (typeof SUBJECT !== 'undefined') {
+    SUBJECT.lat = 35.2285; SUBJECT.lng = 137.0832;
+    SUBJECT.name = '【対象物件】';
+  }
+
+  // 近隣事例サマリーテーブルをクリア
+  const mapCaseBody = document.getElementById('mapCaseBody');
+  if (mapCaseBody) mapCaseBody.innerHTML = '';
+  ['mAvgP','mAvgL','mAvgB','mAvgA','mAvgLU','mAvgTU'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '−';
+  });
+
+  // 成約事例タブのバッジクリア
+  const cBadges = document.getElementById('cBadges');
+  if (cBadges) cBadges.innerHTML = '';
+
+  // 印刷用地図エリアをリセット
+  const printMapDiv = document.getElementById('printMapDiv');
+  if (printMapDiv) printMapDiv.style.cssText = 'display:none !important;margin-top:8px;';
+  const printMapUrl = document.getElementById('printMapUrl');
+  if (printMapUrl) printMapUrl.textContent = '';
+
   // ステータスリセット
   document.getElementById('statusDot').classList.remove('ok');
   document.getElementById('statusTxt').textContent = '未読込';

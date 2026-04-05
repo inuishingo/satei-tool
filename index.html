@@ -1593,24 +1593,14 @@ function reflectAvg() {
   const ad = S.cases.filter(r=>r.adopted);
   if (!ad.length) { alert('採用事例がありません'); return; }
   const avg = k => ad.reduce((s,r)=>s+(r[k]||0),0)/ad.length;
-  const lu = Math.round(avg('_lu'));
-  const tu = Math.round(avg('_tu'));
-  const age = Math.round(avg('age'));
-  // S.に保存（DOM非表示でも確実に保持）
-  S.refLU = lu;
-  S.refTU = tu;
-  S.refAge = age;
-  // タブ切り替え後にDOMセット＆計算
+  document.getElementById('refLandUnit').value = fmt(Math.round(avg('_lu')));
+  document.getElementById('refTotalUnit').value = fmt(Math.round(avg('_tu')));
+  document.getElementById('refAvgAge').value = Math.round(avg('age'));
+  document.getElementById('rResale').value='';
+  document.getElementById('rResaleLow').value='';
   switchTab('tab1', document.querySelector('.tab-btn'));
-  setTimeout(() => {
-    document.getElementById('refLandUnit').value = fmt(lu);
-    document.getElementById('refTotalUnit').value = fmt(tu);
-    document.getElementById('refAvgAge').value = age;
-    document.getElementById('rResale').value='';
-    document.getElementById('rResaleLow').value='';
-    calcAll();
-    addLog('ok', `近隣事例${ad.length}件の平均を査定に反映しました（土地単価${fmt(lu)}円/㎡・総合単価${fmt(tu)}円/㎡）`);
-  }, 100);
+  calcAll();
+  addLog('ok', `近隣事例${ad.length}件の平均を査定に反映しました`);
 }
 
 function sortTbl(col) {
@@ -1631,9 +1621,9 @@ function calcAll() {
   const landArea  = parseFloat(gv('landArea'))||0;
   const buildArea = parseFloat(gv('buildArea'))||0;
   const buildAge  = parseFloat(gv('buildAge'))||0;
-  const refLU     = raw(gv('refLandUnit')) || (S.refLU||0);
-  const refTU     = raw(gv('refTotalUnit')) || (S.refTU||0);
-  const refAvgAge = parseFloat(gv('refAvgAge')) || (S.refAge||0);
+  const refLU     = (S.refLU||0) || raw(gv('refLandUnit'));
+  const refTU     = (S.refTU||0) || raw(gv('refTotalUnit'));
+  const refAvgAge = (S.refAge>0 ? S.refAge : null) ?? (parseFloat(gv('refAvgAge'))||0);
   const reform    = raw(gv('reformCost'));
   const otherCost = raw(gv('otherCost'));
   // 粗利率（チャレンジブロック）

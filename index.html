@@ -760,6 +760,7 @@ const S = {
   aFiles: [], oFiles: [], cFiles: [],
   cases: [],
   sortCol: -1, sortAsc: true,
+  mapReset: false,
 };
 
 // ======================================
@@ -772,6 +773,7 @@ function resetAll() {
   S.aFiles = []; S.oFiles = []; S.cFiles = [];
   S.cases = [];
   S.riskRate = 0;
+  S.mapReset = true;
 
   // 物件情報フィールドをクリア
   ['basePrice','minPrice','landArea','buildArea','buildAge','location','zoning'].forEach(id => {
@@ -832,38 +834,6 @@ function resetAll() {
 
   // 査定結果をダッシュに
   setDash();
-
-  // リスクタグを全解除（.rtagクラス対応）
-  document.querySelectorAll('.rtag.active').forEach(el => el.classList.remove('active'));
-
-  // 地図タブ：Leafletマップを破棄してリセット
-  if (typeof leafletMap !== 'undefined' && leafletMap) {
-    leafletMap.remove();
-    leafletMap = null;
-  }
-  // 地図タブのSUBJECT座標をデフォルトに戻す
-  if (typeof SUBJECT !== 'undefined') {
-    SUBJECT.lat = 35.2285; SUBJECT.lng = 137.0832;
-    SUBJECT.name = '【対象物件】';
-  }
-
-  // 近隣事例サマリーテーブルをクリア
-  const mapCaseBody = document.getElementById('mapCaseBody');
-  if (mapCaseBody) mapCaseBody.innerHTML = '';
-  ['mAvgP','mAvgL','mAvgB','mAvgA','mAvgLU','mAvgTU'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = '−';
-  });
-
-  // 成約事例タブのバッジクリア
-  const cBadges = document.getElementById('cBadges');
-  if (cBadges) cBadges.innerHTML = '';
-
-  // 印刷用地図エリアをリセット
-  const printMapDiv = document.getElementById('printMapDiv');
-  if (printMapDiv) printMapDiv.style.cssText = 'display:none !important;margin-top:8px;';
-  const printMapUrl = document.getElementById('printMapUrl');
-  if (printMapUrl) printMapUrl.textContent = '';
 
   // ステータスリセット
   document.getElementById('statusDot').classList.remove('ok');
@@ -966,6 +936,7 @@ function handleFiles(files, t) {
           }
         });
         if (added > 0) {
+          S.mapReset = false;
           renderCaseTable();
           calcAvg();
           addLog('ok', `📋 ${f.name} → 近隣事例 ${added}件 登録完了`);
@@ -1600,6 +1571,7 @@ function updRow(id,f,v){const r=S.cases.find(r=>r.id===id);if(r)r[f]=v;}
 function delRow(id){S.cases=S.cases.filter(r=>r.id!==id);renderCaseTable();calcAvg();}
 function checkAll(v){S.cases.forEach(r=>r.adopted=v);renderCaseTable();calcAvg();}
 function addManual(){
+  S.mapReset = false;
   S.cases.push({id:Date.now()+Math.random(),name:'手入力事例',date:'',price:0,landArea:0,buildArea:0,age:0,adopted:true,_lu:0,_tu:0});
   renderCaseTable();calcAvg();
 }
@@ -2069,6 +2041,7 @@ function tryPreset(filename) {
         added++;
       }
     });
+    S.mapReset = false;
     renderCaseTable();
     calcAvg();
     addLog('ok', `📋 ${filename} → 近隣事例 ${added}件 自動登録完了`);
@@ -2203,7 +2176,7 @@ function initLeafletMap() {
     .openPopup();
 
   // 事例マーカー（S.casesにデータがあればそちらを使う）
-  const mapCases = S.cases.length > 0 ? S.cases.filter(c => c.lat && c.lng) : ALL_CASES;
+  const mapCases = S.cases.length > 0 ? S.cases.filter(c => c.lat && c.lng) : (S.mapReset ? [] : ALL_CASES);
   mapCases.forEach((c, i) => {
     const lu = c.landArea > 0 ? Math.round(c.price / c.landArea) : 0;
     const tu = (c.landArea + c.buildArea) > 0 ? Math.round(c.price / (c.landArea + c.buildArea)) : 0;
@@ -2268,8 +2241,8 @@ function renderMapCaseTable() {
   tbody.innerHTML = '';
   let totP=0,totL=0,totB=0,totA=0,totLU=0,totTU=0,n=0;
   // S.casesが空ならALL_CASESを使う（地図用固定データ）
-  // S.casesにデータがあればそちらを優先表示
-  const displayCases = S.cases.length > 0 ? S.cases : ALL_CASES;
+  // ただし新規査定後(mapReset=true)は空表示
+  const displayCases = S.cases.length > 0 ? S.cases : (S.mapReset ? [] : ALL_CASES);
   displayCases.forEach((c,i) => {
     const lu = c.landArea>0 ? Math.round(c.price/c.landArea) : 0;
     const tu = (c.landArea+c.buildArea)>0 ? Math.round(c.price/(c.landArea+c.buildArea)) : 0;

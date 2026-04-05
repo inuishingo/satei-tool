@@ -1589,8 +1589,8 @@ function reflectAvg() {
   const age = Math.round(avg('age'));
   switchTab('tab1', document.querySelector('.tab-btn'));
   setTimeout(() => {
-    document.getElementById('refLandUnit').value = String(lu);
-    document.getElementById('refTotalUnit').value = String(tu);
+    document.getElementById('refLandUnit').value = fmt(lu);
+    document.getElementById('refTotalUnit').value = fmt(tu);
     document.getElementById('refAvgAge').value    = String(age);
     document.getElementById('rResale').value    = '';
     document.getElementById('rResaleLow').value = '';
@@ -1861,6 +1861,8 @@ function doPrint(mapDataUrl) {
     const tabs = document.querySelectorAll('.tab-content');
     const activeTab = document.querySelector('.tab-content.active');
     tabs.forEach(t => t.classList.add('active'));
+    // 印刷前に近隣事例サマリーを更新
+    if (typeof renderMapCaseTable === 'function') renderMapCaseTable();
     // ファイル名に所在地を入れる
     const loc = document.getElementById('location')?.value || '';
     const originalTitle = document.title;

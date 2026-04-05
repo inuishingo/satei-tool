@@ -432,21 +432,7 @@ tfoot .avg-row td{background:rgba(232,184,75,.07);font-weight:700;color:var(--ac
   <div class="card">
     <div class="card-title">査定条件</div>
     <div class="divider">近隣事例参照値</div>
-    <div style="margin-bottom:10px;">
-      <button class="btn btn-primary" onclick="
-        document.getElementById('refLandUnit').value='89,905';
-        document.getElementById('refTotalUnit').value='56,628';
-        document.getElementById('refAvgAge').value='37';
-        document.getElementById('rResale').value='';
-        document.getElementById('rResaleLow').value='';
-        calcAll();
-        this.textContent='✅ 入力済';
-        setTimeout(()=>this.innerHTML='🏘️ 近隣事例（全11件）平均を自動入力',2000);
-      " style="font-size:12px;padding:7px 16px;">
-        🏘️ 近隣事例（全11件）平均を自動入力
-      </button>
-      <span style="font-size:11px;color:var(--text2);margin-left:10px;">土地単価 89,905円/㎡　総合単価 56,628円/㎡　平均築年数 37年</span>
-    </div>
+
     <div class="g3" style="margin-bottom:14px;">
       <div class="field">
         <label>土地単価（近隣採用平均）</label>
@@ -1077,14 +1063,14 @@ async function analyzeAuction() {
       const allImgs = [];
       for (let i=0; i<Math.min(S.aFiles.length,3); i++) {
         setP(50 + 20*i);
-        const imgs = await pdfToImages(S.aFiles[i], 30);
+        const imgs = await pdfToImages(S.aFiles[i], 6);
         allImgs.push(...imgs);
       }
       setP(75);
       addLog('ok', `${allImgs.length}ページ → Claude API送信`);
 
       const content = [
-        ...allImgs.slice(0,30).map(b64=>({
+        ...allImgs.slice(0,10).map(b64=>({
           type:'image', source:{type:'base64',media_type:'image/jpeg',data:b64}
         })),
         {type:'text', text:`あなたは不動産競売資料の解析専門家です。
@@ -1105,7 +1091,7 @@ async function analyzeAuction() {
   "買受可能価額": "円単位の数字のみ（売却基準価額の約80%のもの。保証額ではない）",
   "土地面積": "㎡の数字のみ（物件目録の地積欄。小数点付き例：122.94）",
   "建物面積": "㎡の数字のみ（床面積1階＋2階合計。小数点付き例：98.19）",
-  "築年": "評価書の建物概況欄にある建築年月日(登記記載)から元号+年数を抽出(例:平成9年、昭和52年)。なければ現況調査報告書の経過年数欄の数字を使い経過○年と返す",
+  "築年": "昭和○年 または 平成○年 または 令和○年",
   "所在地": "市区町村以降の住所",
   "用途地域": "用途地域名",
   "備考": "占有・残置物・再建築不可・接道不可など特記事項"
@@ -1324,14 +1310,9 @@ function applyExtracted(data) {
   const h2 = chiku.match(/平成\s*(\d+)/); if(h2) year = 1988+parseInt(h2[1]);
   const r2 = chiku.match(/令和\s*(\d+)/); if(r2) year = 2018+parseInt(r2[1]);
   const y2 = chiku.match(/(\d{4})/); if(y2&&!year) year = parseInt(y2[1]);
-  const keika = chiku.match(/経過\s*(\d+)\s*年/);
   if (year > 1900) {
     const el = document.getElementById('buildAge');
     el.value = new Date().getFullYear()-year;
-    el.classList.add('auto-ok');
-  } else if (keika) {
-    const el = document.getElementById('buildAge');
-    el.value = parseInt(keika[1]);
     el.classList.add('auto-ok');
   } else if (data['_buildAge']) {
     const el = document.getElementById('buildAge');
@@ -1598,19 +1579,14 @@ function reflectAvg() {
   const ad = S.cases.filter(r=>r.adopted);
   if (!ad.length) { alert('採用事例がありません'); return; }
   const avg = k => ad.reduce((s,r)=>s+(r[k]||0),0)/ad.length;
-  const lu  = Math.round(avg('_lu'));
-  const tu  = Math.round(avg('_tu'));
-  const age = Math.round(avg('age'));
+  document.getElementById('refLandUnit').value = fmt(Math.round(avg('_lu')));
+  document.getElementById('refTotalUnit').value = fmt(Math.round(avg('_tu')));
+  document.getElementById('refAvgAge').value = Math.round(avg('age'));
+  document.getElementById('rResale').value='';
+  document.getElementById('rResaleLow').value='';
   switchTab('tab1', document.querySelector('.tab-btn'));
-  setTimeout(() => {
-    document.getElementById('refLandUnit').value = String(lu);
-    document.getElementById('refTotalUnit').value = String(tu);
-    document.getElementById('refAvgAge').value    = String(age);
-    document.getElementById('rResale').value    = '';
-    document.getElementById('rResaleLow').value = '';
-    calcAll();
-    addLog('ok', `近隣事例${ad.length}件の平均を査定に反映しました（土地単価${fmt(lu)}円/㎡・総合単価${fmt(tu)}円/㎡）`);
-  }, 150);
+  calcAll();
+  addLog('ok', `近隣事例${ad.length}件の平均を査定に反映しました`);
 }
 
 function sortTbl(col) {
@@ -1631,8 +1607,8 @@ function calcAll() {
   const landArea  = parseFloat(gv('landArea'))||0;
   const buildArea = parseFloat(gv('buildArea'))||0;
   const buildAge  = parseFloat(gv('buildAge'))||0;
-  const refLU     = parseInt(gv('refLandUnit').replace(/[,，]/g,''))||0;
-  const refTU     = parseInt(gv('refTotalUnit').replace(/[,，]/g,''))||0;
+  const refLU     = raw(gv('refLandUnit'));
+  const refTU     = raw(gv('refTotalUnit'));
   const refAvgAge = parseFloat(gv('refAvgAge'))||0;
   const reform    = raw(gv('reformCost'));
   const otherCost = raw(gv('otherCost'));

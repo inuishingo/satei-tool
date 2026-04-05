@@ -760,7 +760,6 @@ const S = {
   aFiles: [], oFiles: [], cFiles: [],
   cases: [],
   sortCol: -1, sortAsc: true,
-  mapReset: false,
 };
 
 // ======================================
@@ -773,7 +772,6 @@ function resetAll() {
   S.aFiles = []; S.oFiles = []; S.cFiles = [];
   S.cases = [];
   S.riskRate = 0;
-  S.mapReset = true;
 
   // 物件情報フィールドをクリア
   ['basePrice','minPrice','landArea','buildArea','buildAge','location','zoning'].forEach(id => {
@@ -936,7 +934,6 @@ function handleFiles(files, t) {
           }
         });
         if (added > 0) {
-          S.mapReset = false;
           renderCaseTable();
           calcAvg();
           addLog('ok', `📋 ${f.name} → 近隣事例 ${added}件 登録完了`);
@@ -1404,6 +1401,9 @@ async function parseCasePDFs(files) {
 
   document.getElementById('cProgBar').style.width = '100%';
   setTimeout(() => { progEl.style.display='none'; }, 500);
+
+  // 座標がない事例をバックグラウンドでジオコーディング
+  geocodeCases();
 }
 
 // 築年数を安全に数値変換（"一年"・"新築"・文字列数字などに対応）
@@ -1430,6 +1430,12 @@ async function parseCaseTextWithAI(text, filename) {
 新築は除外してください。
 以下のJSON配列のみで返してください（他のテキスト不要）：
 [{"name":"所在地（市区町村＋丁目）","date":"YYYY/MM/DD","price":成約価格の数字（円）,"landArea":土地面積の数字（㎡）,"buildArea":建物面積の数字（㎡）,"age":築年数の数字},...]
+
+【面積の読み取り注意】
+- 土地面積：「公簿150.49㎡」「土地面積 118.08㎡」「面積 118.08 ㎡」など表記が様々。数字のみ抽出。
+- 建物面積：「延べ 94.41㎡」「建物面積 119.24㎡」「1階53.01㎡ 2階41.40㎡（→合計94.41）」など。延べ床・合計面積を使う。
+- 万円表記は円に変換（例：1,580万円→15800000）
+- 築年数は西暦換算（平成9年→1997年→2026-1997=29年）
 不明な項目は0。JSONのみ返答。
 
 テキスト：
@@ -1498,9 +1504,45 @@ function parseCaseTextBasic(text, filename) {
   m = text.match(/(20\d{2})[年\/\-](\d{1,2})[月\/\-](\d{1,2})/);
   if (m) row.date = `${m[1]}/${m[2].padStart(2,'0')}/${m[3].padStart(2,'0')}`;
 
-  // 面積
-  m = text.match(/土地[^\d]*([\d.]+)\s*㎡/); if(m) row.landArea=parseFloat(m[1]);
-  m = text.match(/建物[^\d]*([\d.]+)\s*㎡/); if(m) row.buildArea=parseFloat(m[1]);
+  // 土地面積（複数パターン対応）
+  // 例: 土地面積 150.49㎡ / 公簿150.49㎡ / 118.08 ㎡（面積欄） / 土地 118.08㎡
+  const landPatterns = [
+    /公簿\s*([\d.]+)\s*㎡/,           // 公簿150.49㎡
+    /土地面積[^\d]*([\d.]+)\s*㎡/,    // 土地面積 150.49㎡
+    /土地[^\d]*([\d.]+)\s*㎡/,        // 土地 118.08㎡
+    /面\s*積[^\d]*([\d.]+)\s*㎡/,     // 面積 118.08 ㎡（独自書式）
+    /([\d.]+)\s*㎡[^\d]*(?:宅地|地目|私道)/, // ㎡の後に宅地など
+  ];
+  for (const pat of landPatterns) {
+    m = text.match(pat);
+    if (m && parseFloat(m[1]) >= 10 && parseFloat(m[1]) <= 5000) {
+      row.landArea = parseFloat(m[1]);
+      break;
+    }
+  }
+
+  // 建物面積（複数パターン対応）
+  // 例: 建物面積 94.41㎡ / 延べ 94.41㎡ / 公・測　延べ 94.41㎡ / 1階53.01㎡ 2階41.40㎡
+  const buildPatterns = [
+    /延べ\s*([\d.]+)\s*㎡/,            // 延べ 94.41㎡
+    /建物面積[^\d]*([\d.]+)\s*㎡/,    // 建物面積 94.41㎡
+    /建物[^\d]*([\d.]+)\s*㎡/,        // 建物 94.41㎡
+    /延床[^\d]*([\d.]+)\s*㎡/,        // 延床面積
+  ];
+  for (const pat of buildPatterns) {
+    m = text.match(pat);
+    if (m && parseFloat(m[1]) >= 10 && parseFloat(m[1]) <= 3000) {
+      row.buildArea = parseFloat(m[1]);
+      break;
+    }
+  }
+  // 延べが取れなかった場合：1階+2階を合算
+  if (!row.buildArea) {
+    const f1 = text.match(/1階\s*([\d.]+)\s*㎡/);
+    const f2 = text.match(/2階\s*([\d.]+)\s*㎡/);
+    if (f1 && f2) row.buildArea = parseFloat((parseFloat(f1[1]) + parseFloat(f2[1])).toFixed(2));
+    else if (f1) row.buildArea = parseFloat(f1[1]);
+  }
 
   // 築年
   let sm = text.match(/昭和\s*(\d+)/);
@@ -1571,7 +1613,6 @@ function updRow(id,f,v){const r=S.cases.find(r=>r.id===id);if(r)r[f]=v;}
 function delRow(id){S.cases=S.cases.filter(r=>r.id!==id);renderCaseTable();calcAvg();}
 function checkAll(v){S.cases.forEach(r=>r.adopted=v);renderCaseTable();calcAvg();}
 function addManual(){
-  S.mapReset = false;
   S.cases.push({id:Date.now()+Math.random(),name:'手入力事例',date:'',price:0,landArea:0,buildArea:0,age:0,adopted:true,_lu:0,_tu:0});
   renderCaseTable();calcAvg();
 }
@@ -2041,12 +2082,13 @@ function tryPreset(filename) {
         added++;
       }
     });
-    S.mapReset = false;
     renderCaseTable();
     calcAvg();
     addLog('ok', `📋 ${filename} → 近隣事例 ${added}件 自動登録完了`);
     // 地図も更新
     renderMap();
+    // 座標取得（バックグラウンド）
+    geocodeCases();
   }
 }
 
@@ -2104,11 +2146,53 @@ async function geocodeSubject(address) {
   return false;
 }
 
+// 成約事例の住所から座標を取得してS.casesに反映
+async function geocodeCases() {
+  const targets = S.cases.filter(c => !c.lat && c.name && c.name.length > 3);
+  if (!targets.length) return;
+  addLog('ok', `📍 近隣事例 ${targets.length}件の座標を取得中...`);
+  let success = 0;
+  for (const c of targets) {
+    // Nominatimの利用規約上、1秒以上間隔を空ける
+    await new Promise(r => setTimeout(r, 1100));
+    const queries = [
+      '日本 ' + c.name,
+      c.name.replace(/[0-9０-９]+番地?[0-9０-９]*/,'').trim(),
+      (c.name.match(/(.+?[市区町村])/)?.[1] || c.name),
+    ];
+    for (const q of queries) {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=3&countrycodes=jp`,
+          { headers: { 'Accept-Language': 'ja' } }
+        );
+        const data = await res.json();
+        if (data && data.length > 0) {
+          const best = data.reduce((a,b) => parseFloat(a.importance||0) > parseFloat(b.importance||0) ? a : b);
+          c.lat = parseFloat(best.lat);
+          c.lng = parseFloat(best.lon);
+          success++;
+          break;
+        }
+      } catch(e) { /* 次のクエリへ */ }
+    }
+  }
+  addLog('ok', `📍 座標取得完了（${success}/${targets.length}件）`);
+  // 地図タブが開いていれば再描画
+  if (document.getElementById('tab3')?.classList.contains('active')) {
+    initLeafletMap();
+    renderMapCaseTable();
+  }
+}
+
 let leafletMap = null;
 let leafletLoaded = false;
 
 function renderMap() {
   renderMapCaseTable();
+  // 座標がない事例があればジオコーディング
+  const needsGeocode = S.cases.some(c => !c.lat && c.name && c.name.length > 3);
+  if (needsGeocode) geocodeCases();
   // Leafletが未ロードなら動的に読み込む
   if (typeof L === 'undefined') {
     const css = document.createElement('link');
@@ -2176,7 +2260,7 @@ function initLeafletMap() {
     .openPopup();
 
   // 事例マーカー（S.casesにデータがあればそちらを使う）
-  const mapCases = S.cases.length > 0 ? S.cases.filter(c => c.lat && c.lng) : (S.mapReset ? [] : ALL_CASES);
+  const mapCases = S.cases.length > 0 ? S.cases.filter(c => c.lat && c.lng) : ALL_CASES;
   mapCases.forEach((c, i) => {
     const lu = c.landArea > 0 ? Math.round(c.price / c.landArea) : 0;
     const tu = (c.landArea + c.buildArea) > 0 ? Math.round(c.price / (c.landArea + c.buildArea)) : 0;
@@ -2241,8 +2325,8 @@ function renderMapCaseTable() {
   tbody.innerHTML = '';
   let totP=0,totL=0,totB=0,totA=0,totLU=0,totTU=0,n=0;
   // S.casesが空ならALL_CASESを使う（地図用固定データ）
-  // ただし新規査定後(mapReset=true)は空表示
-  const displayCases = S.cases.length > 0 ? S.cases : (S.mapReset ? [] : ALL_CASES);
+  // S.casesにデータがあればそちらを優先表示
+  const displayCases = S.cases.length > 0 ? S.cases : ALL_CASES;
   displayCases.forEach((c,i) => {
     const lu = c.landArea>0 ? Math.round(c.price/c.landArea) : 0;
     const tu = (c.landArea+c.buildArea)>0 ? Math.round(c.price/(c.landArea+c.buildArea)) : 0;

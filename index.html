@@ -1403,6 +1403,24 @@ async function parseCasePDFs(files) {
   setTimeout(() => { progEl.style.display='none'; }, 500);
 }
 
+// 築年数を安全に数値変換（"一年"・"新築"・文字列数字などに対応）
+function safeAge(val) {
+  if (val === null || val === undefined || val === '') return 0;
+  const s = String(val).trim();
+  // 漢数字・新築判定
+  if (s === '一年' || s === '１年' || s === '新築' || s === '0年') return 0;
+  // 既に数値
+  const n = parseInt(s);
+  if (!isNaN(n)) return Math.max(0, n);
+  return 0;
+}
+
+// 築年数の表示（0またはNaN→「不明」、それ以外→「N年」）
+function fmtAge(val) {
+  const n = safeAge(val);
+  return n > 0 ? n + '年' : '不明';
+}
+
 // テキストPDFをAIで複数件解析
 async function parseCaseTextWithAI(text, filename) {
   const prompt = `以下は不動産成約事例のテキストデータです。中古一戸建ての成約事例を全件抽出してください。
@@ -1425,7 +1443,7 @@ ${text.slice(0, 3000)}`;
       price: parseInt(d.price)||0,
       landArea: parseFloat(d.landArea)||0,
       buildArea: parseFloat(d.buildArea)||0,
-      age: parseInt(d.age)||0,
+      age: safeAge(d.age),
       _lu: d.landArea>0 ? Math.round(d.price/d.landArea) : 0,
       _tu: (d.landArea+d.buildArea)>0 ? Math.round(d.price/(d.landArea+d.buildArea)) : 0,
     }));
@@ -1452,7 +1470,7 @@ async function parseCaseImageWithAI(file) {
       price: parseInt(d.price)||0,
       landArea: parseFloat(d.landArea)||0,
       buildArea: parseFloat(d.buildArea)||0,
-      age: parseInt(d.age)||0,
+      age: safeAge(d.age),
       _lu: d.landArea>0 ? Math.round(d.price/d.landArea) : 0,
       _tu: (d.landArea+d.buildArea)>0 ? Math.round(d.price/(d.landArea+d.buildArea)) : 0,
     }));
@@ -1527,7 +1545,7 @@ function renderCaseTable() {
       <td>${row.price?fmt(row.price)+'円':'−'}</td>
       <td>${row.landArea||'−'}㎡</td>
       <td>${row.buildArea||'−'}㎡</td>
-      <td>${row.age||'−'}年</td>
+      <td>${fmtAge(row.age)}</td>
       <td>${lu?fmt(lu)+'円<div class="sub2">/㎡</div>':'−'}</td>
       <td>${tu?fmt(tu)+'円<div class="sub2">/㎡</div>':'−'}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="delRow(${row.id})">削除</button></td>`;
@@ -1567,7 +1585,7 @@ function calcAvg() {
   const avP=Math.round(avg('price'));
   const avL=avg('landArea').toFixed(1);
   const avB=avg('buildArea').toFixed(1);
-  const avA=Math.round(avg('age'));
+  const avA=Math.round(ad.reduce((s,r)=>s+safeAge(r.age),0)/ad.length);
   const avLU=Math.round(avg('_lu'));
   const avTU=Math.round(avg('_tu'));
   document.getElementById('avPrice').textContent = avP?fmt(avP)+'円':'−';
@@ -1861,7 +1879,6 @@ function doPrint(mapDataUrl) {
     const tabs = document.querySelectorAll('.tab-content');
     const activeTab = document.querySelector('.tab-content.active');
     tabs.forEach(t => t.classList.add('active'));
-    // 印刷前に近隣事例サマリーを更新
     if (typeof renderMapCaseTable === 'function') renderMapCaseTable();
     // ファイル名に所在地を入れる
     const loc = document.getElementById('location')?.value || '';
@@ -2185,7 +2202,7 @@ function initLeafletMap() {
             <tr><td style="color:#666;padding:2px 0;">成約価格</td><td style="text-align:right;font-weight:700;">${(c.price/10000).toLocaleString()}万円</td></tr>
             <tr><td style="color:#666;padding:2px 0;">土地面積</td><td style="text-align:right;">${c.landArea}㎡</td></tr>
             <tr><td style="color:#666;padding:2px 0;">建物面積</td><td style="text-align:right;">${c.buildArea}㎡</td></tr>
-            <tr><td style="color:#666;padding:2px 0;">築年数</td><td style="text-align:right;">${c.age}年</td></tr>
+            <tr><td style="color:#666;padding:2px 0;">築年数</td><td style="text-align:right;">${fmtAge(c.age)}</td></tr>
             <tr><td style="color:#666;padding:2px 0;">土地単価</td><td style="text-align:right;color:green;font-weight:700;">${lu.toLocaleString()}円/㎡</td></tr>
             <tr><td style="color:#666;padding:2px 0;">総合単価</td><td style="text-align:right;color:green;font-weight:700;">${tu.toLocaleString()}円/㎡</td></tr>
           </table>
@@ -2224,7 +2241,7 @@ function renderMapCaseTable() {
   displayCases.forEach((c,i) => {
     const lu = c.landArea>0 ? Math.round(c.price/c.landArea) : 0;
     const tu = (c.landArea+c.buildArea)>0 ? Math.round(c.price/(c.landArea+c.buildArea)) : 0;
-    totP+=c.price; totL+=c.landArea; totB+=c.buildArea; totA+=c.age; totLU+=lu; totTU+=tu; n++;
+    totP+=c.price; totL+=c.landArea; totB+=c.buildArea; const ca=safeAge(c.age); if(ca>0){totA+=ca;} totLU+=lu; totTU+=tu; n++;
     const tr=document.createElement('tr');
     tr.innerHTML=`
       <td style="text-align:left;color:var(--text2);font-size:12px;"><span style="color:var(--accent);font-weight:700;margin-right:6px;">${i+1}</span>${c.name}</td>
@@ -2232,7 +2249,7 @@ function renderMapCaseTable() {
       <td>${fmt(c.price)}円</td>
       <td>${c.landArea}㎡</td>
       <td>${c.buildArea}㎡</td>
-      <td>${c.age}年</td>
+      <td>${fmtAge(c.age)}</td>
       <td style="color:var(--safe);">${fmt(lu)}円/㎡</td>
       <td style="color:var(--safe);">${fmt(tu)}円/㎡</td>`;
     tbody.appendChild(tr);

@@ -2191,8 +2191,7 @@ async function geocodeCases() {
     for (const q of queries) {
       try {
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=3&countrycodes=jp`,
-          { headers: { 'Accept-Language': 'ja' } }
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=3&countrycodes=jp&accept-language=ja`
         );
         const data = await res.json();
         if (data && data.length > 0) {

@@ -2144,23 +2144,22 @@ const SUBJECT = { name:'【対象物件】', lat:35.1266654, lng:136.9298696, pr
 // 住所からジオコーディング（Nominatim）してSUBJECT座標を更新
 async function geocodeSubject(address) {
   if (!address) return;
-  // 詳細住所 → 市区町村レベル → 都道府県レベル の順でフォールバック
+  // 国土地理院ジオコーダーAPI（CORSフリー・日本住所専用）
   const queries = [
-    '日本 ' + address,
-    address.replace(/[0-9０-９]+番地?[0-9０-９]*/, '').trim(),  // 番地除去
-    (address.match(/(.+?[市区町村])/)?.[1] || address),          // 市区町村まで
+    address,
+    address.replace(/[0-9０-９]+番地?[0-9０-９]*/, '').trim(),
+    (address.match(/(.+?[市区町村])/)?.[1] || address),
   ];
   for (const q of queries) {
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&countrycodes=jp`,
-        { headers: { 'Accept-Language': 'ja' } }
+        `https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(q)}`
       );
       const data = await res.json();
       if (data && data.length > 0) {
-        const best = data.reduce((a,b) => parseFloat(a.importance||0) > parseFloat(b.importance||0) ? a : b);
-        SUBJECT.lat = parseFloat(best.lat);
-        SUBJECT.lng = parseFloat(best.lon);
+        const best = data[0];
+        SUBJECT.lat = parseFloat(best.geometry.coordinates[1]);
+        SUBJECT.lng = parseFloat(best.geometry.coordinates[0]);
         SUBJECT.name = '【対象】' + address;
         addLog('ok', `ジオコーディング完了 [${q}] → (${SUBJECT.lat.toFixed(5)}, ${SUBJECT.lng.toFixed(5)})`);
         if (document.getElementById('tab3')?.classList.contains('active')) {
@@ -2181,23 +2180,21 @@ async function geocodeCases() {
   addLog('ok', `📍 近隣事例 ${targets.length}件の座標を取得中...`);
   let success = 0;
   for (const c of targets) {
-    // Nominatimの利用規約上、1秒以上間隔を空ける
-    await new Promise(r => setTimeout(r, 1100));
+    await new Promise(r => setTimeout(r, 300));
     const queries = [
-      '日本 ' + c.name,
+      c.name,
       c.name.replace(/[0-9０-９]+番地?[0-9０-９]*/,'').trim(),
       (c.name.match(/(.+?[市区町村])/)?.[1] || c.name),
     ];
     for (const q of queries) {
       try {
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=3&countrycodes=jp&accept-language=ja`
+          `https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(q)}`
         );
         const data = await res.json();
         if (data && data.length > 0) {
-          const best = data.reduce((a,b) => parseFloat(a.importance||0) > parseFloat(b.importance||0) ? a : b);
-          c.lat = parseFloat(best.lat);
-          c.lng = parseFloat(best.lon);
+          c.lat = parseFloat(data[0].geometry.coordinates[1]);
+          c.lng = parseFloat(data[0].geometry.coordinates[0]);
           success++;
           break;
         }

@@ -1404,7 +1404,20 @@ async function parseCasePDFs(files) {
       }
 
       if (hasText) {
-        if (S.apiKey) {
+        // まず正規表現で複数件パース（REINS一覧等）
+        const basicRows = parseReinsListText(text, f.name);
+        if (basicRows.length >= 2) {
+          // 複数件取れた場合はAPIなしで登録
+          let added = 0;
+          basicRows.forEach(row => {
+            if (!S.cases.find(r => r.date === row.date && r.price === row.price && r.landArea === row.landArea)) {
+              S.cases.push({...row, id:Date.now()+Math.random(), adopted:true});
+              added++;
+            }
+          });
+          addLog('ok', `${f.name}：正規表現パース ${added}件追加（API不使用）`);
+        } else if (S.apiKey) {
+          // 正規表現で取れない場合のみAI使用
           const rows = await parseCaseTextWithAI(text, f.name);
           let added = 0;
           rows.forEach(row => {
@@ -1554,74 +1567,109 @@ async function parseCaseImageWithAI(file) {
 }
 
 function parseCaseTextBasic(text, filename) {
-  const row = {name:filename.replace('.pdf',''),date:'',price:0,landArea:0,buildArea:0,age:0};
+  // REINS一覧形式（複数件）を優先的に試みる
+  const multiRows = parseReinsListText(text, filename);
+  if (multiRows.length > 0) return multiRows[0]; // 後段で配列対応するが互換のため1件目を返す
 
-  // 価格
+  // 単件フォールバック
+  const row = {name:filename.replace('.pdf',''),date:'',price:0,landArea:0,buildArea:0,age:0};
   let m = text.match(/成約(?:価格)?[^\d]*([\d,]+)\s*円/);
   if (!m) m = text.match(/売買価格[^\d]*([\d,]+)\s*円/);
   if (m) row.price = parseInt(m[1].replace(/,/g,''))||0;
-  else {
-    const wm = text.match(/([\d,]+)\s*万円/);
-    if (wm) row.price = parseInt(wm[1].replace(/,/g,''))*10000;
-  }
-
-  // 日付
+  else { const wm = text.match(/([\d,]+)\s*万円/); if (wm) row.price = parseInt(wm[1].replace(/,/g,''))*10000; }
   m = text.match(/(20\d{2})[年\/\-](\d{1,2})[月\/\-](\d{1,2})/);
   if (m) row.date = `${m[1]}/${m[2].padStart(2,'0')}/${m[3].padStart(2,'0')}`;
-
-  // 土地面積（複数パターン対応）
-  // 例: 土地面積 150.49㎡ / 公簿150.49㎡ / 118.08 ㎡（面積欄） / 土地 118.08㎡
-  const landPatterns = [
-    /公簿\s*([\d.]+)\s*㎡/,           // 公簿150.49㎡
-    /土地面積[^\d]*([\d.]+)\s*㎡/,    // 土地面積 150.49㎡
-    /土地[^\d]*([\d.]+)\s*㎡/,        // 土地 118.08㎡
-    /面\s*積[^\d]*([\d.]+)\s*㎡/,     // 面積 118.08 ㎡（独自書式）
-    /([\d.]+)\s*㎡[^\d]*(?:宅地|地目|私道)/, // ㎡の後に宅地など
-  ];
-  for (const pat of landPatterns) {
-    m = text.match(pat);
-    if (m && parseFloat(m[1]) >= 10 && parseFloat(m[1]) <= 5000) {
-      row.landArea = parseFloat(m[1]);
-      break;
-    }
-  }
-
-  // 建物面積（複数パターン対応）
-  // 例: 建物面積 94.41㎡ / 延べ 94.41㎡ / 公・測　延べ 94.41㎡ / 1階53.01㎡ 2階41.40㎡
-  const buildPatterns = [
-    /延べ\s*([\d.]+)\s*㎡/,            // 延べ 94.41㎡
-    /建物面積[^\d]*([\d.]+)\s*㎡/,    // 建物面積 94.41㎡
-    /建物[^\d]*([\d.]+)\s*㎡/,        // 建物 94.41㎡
-    /延床[^\d]*([\d.]+)\s*㎡/,        // 延床面積
-  ];
-  for (const pat of buildPatterns) {
-    m = text.match(pat);
-    if (m && parseFloat(m[1]) >= 10 && parseFloat(m[1]) <= 3000) {
-      row.buildArea = parseFloat(m[1]);
-      break;
-    }
-  }
-  // 延べが取れなかった場合：1階+2階を合算
-  if (!row.buildArea) {
-    const f1 = text.match(/1階\s*([\d.]+)\s*㎡/);
-    const f2 = text.match(/2階\s*([\d.]+)\s*㎡/);
-    if (f1 && f2) row.buildArea = parseFloat((parseFloat(f1[1]) + parseFloat(f2[1])).toFixed(2));
-    else if (f1) row.buildArea = parseFloat(f1[1]);
-  }
-
-  // 築年
-  let sm = text.match(/昭和\s*(\d+)/);
-  if (sm) { row.age = new Date().getFullYear()-(1925+parseInt(sm[1])); }
-  else {
-    sm = text.match(/平成\s*(\d+)/);
-    if (sm) { row.age = new Date().getFullYear()-(1988+parseInt(sm[1])); }
-    else {
-      sm = text.match(/令和\s*(\d+)/);
-      if (sm) { row.age = new Date().getFullYear()-(2018+parseInt(sm[1])); }
-    }
-  }
-
+  const landP = [/公簿\s*([\d.]+)\s*㎡/,/土地面積[^\d]*([\d.]+)\s*㎡/,/土地[^\d]*([\d.]+)\s*㎡/,/面\s*積[^\d]*([\d.]+)\s*㎡/];
+  for (const p of landP) { m=text.match(p); if(m&&parseFloat(m[1])>=10&&parseFloat(m[1])<=5000){row.landArea=parseFloat(m[1]);break;} }
+  const buildP = [/延べ\s*([\d.]+)\s*㎡/,/建物面積[^\d]*([\d.]+)\s*㎡/,/延床[^\d]*([\d.]+)\s*㎡/];
+  for (const p of buildP) { m=text.match(p); if(m&&parseFloat(m[1])>=10&&parseFloat(m[1])<=3000){row.buildArea=parseFloat(m[1]);break;} }
+  if (!row.buildArea) { const f1=text.match(/1階\s*([\d.]+)\s*㎡/),f2=text.match(/2階\s*([\d.]+)\s*㎡/); if(f1&&f2)row.buildArea=parseFloat((parseFloat(f1[1])+parseFloat(f2[1])).toFixed(2)); }
+  let sm=text.match(/昭和\s*(\d+)/); if(sm){row.age=new Date().getFullYear()-(1925+parseInt(sm[1]));}
+  else{sm=text.match(/平成\s*(\d+)/);if(sm){row.age=new Date().getFullYear()-(1988+parseInt(sm[1]));}
+  else{sm=text.match(/令和\s*(\d+)/);if(sm){row.age=new Date().getFullYear()-(2018+parseInt(sm[1]));}}}
   return row;
+}
+
+// REINS一覧テキストから複数件を正規表現で抽出（APIなし）
+function parseReinsListText(text, filename) {
+  const rows = [];
+  const seen = new Set();
+  const yr = new Date().getFullYear();
+
+  // 和暦→西暦変換
+  function waToSeireki(str) {
+    let m;
+    m = str.match(/令和\s*(\d+)年\s*(\d+)月\s*(\d+)日/);
+    if (m) return `${2018+parseInt(m[1])}/${m[2].padStart(2,'0')}/${m[3].padStart(2,'0')}`;
+    m = str.match(/平成\s*(\d+)年\s*(\d+)月\s*(\d+)日/);
+    if (m) return `${1988+parseInt(m[1])}/${m[2].padStart(2,'0')}/${m[3].padStart(2,'0')}`;
+    m = str.match(/昭和\s*(\d+)年\s*(\d+)月\s*(\d+)日/);
+    if (m) return `${1925+parseInt(m[1])}/${m[2].padStart(2,'0')}/${m[3].padStart(2,'0')}`;
+    m = str.match(/(20\d{2})[\/年](\d{1,2})[\/月](\d{1,2})/);
+    if (m) return `${m[1]}/${m[2].padStart(2,'0')}/${m[3].padStart(2,'0')}`;
+    return '';
+  }
+
+  // 万円→円
+  function manToEn(str) {
+    const m = str.match(/([\d,]+(?:\.\d+)?)\s*万円/);
+    if (m) return Math.round(parseFloat(m[1].replace(/,/g,'')) * 10000);
+    const m2 = str.match(/([\d,]+)\s*円/);
+    if (m2) return parseInt(m2[1].replace(/,/g,''));
+    return 0;
+  }
+
+  // REINS成約事例一覧のパターン：
+  // 各件は「No.
+物件番号 売地 土地面積 所在地
+取引態様 価格 用途 ㎡単価
+建ぺい率 坪単価
+成約年月日 容積率 接道」
+  // 価格行: 「専任 998万円 一中 3.2万円」
+  // 成約年月日行: 「令和 6年 3月 9日 200%」
+  const blocks = text.split(/\n(?=\d+\s*\n|No\.\s*\d)/);
+
+  // 方式1: 「成約年月日」と「万円」が同一ブロックにあるパターンを探す
+  // REINSテキストは各件が数行のブロックで構成される
+  // 土地面積行: 「300116325538 売地 318.03㎡ 滋賀県湖南市水戸町」
+  const entryPattern = /(\d{15})\s+売地\s+([\d.]+)㎡\s+([^\n]+?)\n[^\n]*?([\d,]+(?:\.\d+)?)\s*万円[^\n]*\n[^\n]*\n[^\n]*?(令和|平成|昭和)\s*(\d+)年\s*(\d+)月\s*(\d+)日/g;
+  let m;
+  while ((m = entryPattern.exec(text)) !== null) {
+    const date = waToSeireki(`${m[5]}${m[6]}年${m[7]}月${m[8]}日`);
+    const price = Math.round(parseFloat(m[4].replace(/,/g,'')) * 10000);
+    const la = parseFloat(m[2]);
+    const name = m[3].trim().replace(/滋賀県/,'');
+    const key = `${date}_${price}_${la}`;
+    if (!seen.has(key) && price > 0 && la > 0) {
+      seen.add(key);
+      rows.push({ name, date, price, landArea:la, buildArea:0, age:0,
+        _lu: la>0?Math.round(price/la):0, _tu: la>0?Math.round(price/la):0 });
+    }
+  }
+
+  if (rows.length > 0) return rows;
+
+  // 方式2: 価格と日付と面積をそれぞれ全部抽出してマッチング
+  const prices = [...text.matchAll(/([\d,]+(?:\.\d+)?)\s*万円/g)].map(x=>Math.round(parseFloat(x[1].replace(/,/g,''))*10000));
+  const dates = [...text.matchAll(/(令和|平成|昭和)\s*(\d+)年\s*(\d+)月\s*(\d+)日/g)].map(x=>waToSeireki(`${x[1]}${x[2]}年${x[3]}月${x[4]}日`));
+  const areas = [...text.matchAll(/([\d.]+)㎡/g)].map(x=>parseFloat(x[1])).filter(a=>a>=50&&a<=2000);
+
+  // 価格・日付・面積の数が揃っているか確認（各行ずつ対応している場合）
+  const count = Math.min(prices.length, dates.length);
+  if (count >= 2) {
+    for (let i=0; i<count; i++) {
+      const la = areas[i] || 0;
+      const key = `${dates[i]}_${prices[i]}_${la}`;
+      if (!seen.has(key) && prices[i]>0) {
+        seen.add(key);
+        rows.push({ name: filename.replace('.pdf',''), date:dates[i], price:prices[i],
+          landArea:la, buildArea:0, age:0,
+          _lu: la>0?Math.round(prices[i]/la):0, _tu: la>0?Math.round(prices[i]/la):0 });
+      }
+    }
+  }
+
+  return rows;
 }
 
 // テーブル描画

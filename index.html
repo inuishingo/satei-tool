@@ -1386,19 +1386,31 @@ async function parseCasePDFs(files) {
   for (let i=0; i<files.length; i++) {
     document.getElementById('cProgBar').style.width = ((i/files.length)*100)+'%';
     const f = files[i];
+    addLog('info', `${f.name}：解析開始 (${i+1}/${files.length})`);
     try {
       const text = await pdfToText(f);
       const hasText = text.replace(/\s/g,'').length > 80;
+
+      // 図面系ファイルはスキップ
+      const isZumen = /図面|zmn_list|zumen/i.test(f.name);
+      if (isZumen && !hasText) {
+        addLog('warn', `${f.name}：図面PDFのためスキップ`);
+        renderCaseTable(); calcAvg();
+        if (i < files.length - 1) await new Promise(r => setTimeout(r, 3000));
+        continue;
+      }
+
       if (hasText) {
-        // テキストPDF → 複数件抽出
         if (S.apiKey) {
           const rows = await parseCaseTextWithAI(text, f.name);
+          let added = 0;
           rows.forEach(row => {
             if (!S.cases.find(r => r.name === row.name && r.date === row.date)) {
               S.cases.push({...row, id:Date.now()+Math.random(), adopted:true});
+              added++;
             }
           });
-          addLog('ok', `${f.name}：AI解析 ${rows.length}件完了`);
+          addLog('ok', `${f.name}：AI解析完了 ${added}件追加`);
         } else {
           const row = parseCaseTextBasic(text, f.name);
           const lu = row.landArea>0 ? Math.round(row.price/row.landArea) : 0;
@@ -1407,30 +1419,33 @@ async function parseCasePDFs(files) {
           addLog('ok', `${f.name}：テキスト抽出完了`);
         }
       } else if (S.apiKey) {
-        // スキャンPDF → 画像解析・複数件
+        addLog('info', `${f.name}：スキャンPDF → 画像解析中...`);
         const rows = await parseCaseImageWithAI(f);
+        let added = 0;
         rows.forEach(row => {
           if (!S.cases.find(r => r.name === row.name && r.date === row.date)) {
             S.cases.push({...row, id:Date.now()+Math.random(), adopted:true});
+            added++;
           }
         });
-        addLog('ok', `${f.name}：AI画像解析 ${rows.length}件完了`);
+        addLog('ok', `${f.name}：画像解析完了 ${added}件追加`);
       } else {
-        S.cases.push({name:f.name.replace('.pdf',''),date:'',price:0,landArea:0,buildArea:0,age:0,id:Date.now()+Math.random(),adopted:true,_lu:0,_tu:0});
         addLog('warn', `${f.name}：テキストなし・APIキー未設定。手入力してください`);
       }
     } catch(e) {
-      S.cases.push({name:f.name.replace('.pdf',''),date:'',price:0,landArea:0,buildArea:0,age:0,id:Date.now()+Math.random(),adopted:true,_lu:0,_tu:0});
-      addLog('warn', `${f.name}：抽出エラー（手入力推奨）`);
+      console.error(`parseCasePDFs error [${f.name}]:`, e);
+      addLog('warn', `${f.name}：エラー → ${e.message || e}`);
     }
     renderCaseTable();
     calcAvg();
+    if (i < files.length - 1) {
+      addLog('info', '次のファイルまで10秒待機中...');
+      await new Promise(r => setTimeout(r, 10000));
+    }
   }
 
   document.getElementById('cProgBar').style.width = '100%';
   setTimeout(() => { progEl.style.display='none'; }, 500);
-
-  // 座標がない事例をバックグラウンドでジオコーディング
   geocodeCases();
 }
 
@@ -1454,7 +1469,6 @@ function fmtAge(val) {
 
 // テキストPDFをAIで複数件解析
 async function parseCaseTextWithAI(text, filename) {
-  // 空白圧縮でトークン削減
   const compressed = text.replace(/[ \t]+/g,' ').replace(/\n{3,}/g,'\n\n');
   const CHUNK = 8000;
   const allRows = [];
@@ -1473,7 +1487,6 @@ JSON配列のみ返答（前置き・後書き不要）：
 ・不明項目は0。JSONのみ返答。
 テキスト：
 ${chunk}`;
-
     try {
       const raw = await callClaude([{role:'user',content:[{type:'text',text:prompt}]}],'不動産成約事例一括抽出。JSON配列のみ返答。');
       const jsonStr = raw.match(/\[[\s\S]*\]/)?.[0];
@@ -1481,39 +1494,41 @@ ${chunk}`;
         const arr = JSON.parse(jsonStr);
         arr.forEach(d => {
           const key = `${d.date}_${d.price}_${d.landArea}`;
-          if (!seen.has(key) && (parseInt(d.price) > 0 || parseFloat(d.landArea) > 0)) {
+          if (!seen.has(key) && (parseInt(d.price)>0 || parseFloat(d.landArea)>0)) {
             seen.add(key);
             const la = parseFloat(d.landArea)||0;
             const ba = parseFloat(d.buildArea)||0;
+            const pr = parseInt(d.price)||0;
             allRows.push({
               name: d.name || filename.replace('.pdf',''),
               date: d.date || '',
-              price: parseInt(d.price)||0,
+              price: pr,
               landArea: la,
               buildArea: ba,
               age: safeAge(d.age),
-              _lu: la>0 ? Math.round((parseInt(d.price)||0)/la) : 0,
-              _tu: (la+ba)>0 ? Math.round((parseInt(d.price)||0)/(la+ba)) : 0,
+              _lu: la>0 ? Math.round(pr/la) : 0,
+              _tu: (la+ba)>0 ? Math.round(pr/(la+ba)) : 0,
             });
           }
         });
       }
     } catch(e) {
-      console.warn('chunk parse error:', e);
+      console.warn('chunk error:', e);
     }
-
     if (start + CHUNK < compressed.length) {
       await new Promise(r => setTimeout(r, 5000));
     }
   }
   return allRows;
+}
 
 
+// スキャンPDFをAIで複数件解析
 async function parseCaseImageWithAI(file) {
   const imgs = await pdfToImages(file, 3);
   const content = [
     ...imgs.map(b64=>({type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}})),
-    {type:'text',text:'不動産成約事例資料です。中古一戸建ての成約事例を全件抽出してください。新築は除外。\nJSON配列のみで返してください：\n[{"name":"所在地","date":"YYYY/MM/DD","price":成約価格数字,"landArea":土地面積数字,"buildArea":建物面積数字,"age":築年数数字},...]\n不明は0。JSONのみ。'}
+    {type:'text',text:'不動産成約事例資料。売土地・更地・中古一戸建て問わず全件抽出。建売（土地＋建物セット）のみ除外。\nJSON配列のみ返答：[{"name":"所在地","date":"YYYY/MM/DD","price":円,"landArea":㎡,"buildArea":㎡(売土地0),"age":築年数(売土地0)}]\n万円→円変換(998万→9980000)。複数号地は別件で抽出。不明は0。JSONのみ。'}
   ];
   const raw = await callClaude([{role:'user',content}],'不動産成約事例一括抽出。JSON配列のみ返答。');
   try {

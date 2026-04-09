@@ -1393,12 +1393,18 @@ async function parseCasePDFs(files) {
         // テキストPDF → 複数件抽出
         if (S.apiKey) {
           const rows = await parseCaseTextWithAI(text, f.name);
+          let added = 0;
           rows.forEach(row => {
             if (!S.cases.find(r => r.name === row.name && r.date === row.date)) {
               S.cases.push({...row, id:Date.now()+Math.random(), adopted:true});
+              added++;
             }
           });
-          addLog('ok', `${f.name}：AI解析 ${rows.length}件完了`);
+          if (added > 0) {
+            addLog('ok', `${f.name}：AI解析 ${added}件完了`);
+          } else {
+            addLog('warn', `${f.name}：AI解析0件（成約事例が見つかりませんでした）`);
+          }
         } else {
           const row = parseCaseTextBasic(text, f.name);
           const lu = row.landArea>0 ? Math.round(row.price/row.landArea) : 0;
@@ -1409,19 +1415,25 @@ async function parseCasePDFs(files) {
       } else if (S.apiKey) {
         // スキャンPDF → 画像解析・複数件
         const rows = await parseCaseImageWithAI(f);
+        let added = 0;
         rows.forEach(row => {
           if (!S.cases.find(r => r.name === row.name && r.date === row.date)) {
             S.cases.push({...row, id:Date.now()+Math.random(), adopted:true});
+            added++;
           }
         });
-        addLog('ok', `${f.name}：AI画像解析 ${rows.length}件完了`);
+        if (added > 0) {
+          addLog('ok', `${f.name}：AI画像解析 ${added}件完了`);
+        } else {
+          addLog('warn', `${f.name}：AI画像解析0件（成約事例が見つかりませんでした）`);
+        }
       } else {
         S.cases.push({name:f.name.replace('.pdf',''),date:'',price:0,landArea:0,buildArea:0,age:0,id:Date.now()+Math.random(),adopted:true,_lu:0,_tu:0});
         addLog('warn', `${f.name}：テキストなし・APIキー未設定。手入力してください`);
       }
     } catch(e) {
-      S.cases.push({name:f.name.replace('.pdf',''),date:'',price:0,landArea:0,buildArea:0,age:0,id:Date.now()+Math.random(),adopted:true,_lu:0,_tu:0});
-      addLog('warn', `${f.name}：抽出エラー（手入力推奨）`);
+      console.error(`parseCasePDFs error [${f.name}]:`, e);
+      addLog('warn', `${f.name}：抽出エラー → ${e.message || e}（コンソール確認を）`);
     }
     renderCaseTable();
     calcAvg();
@@ -1454,21 +1466,20 @@ function fmtAge(val) {
 
 // テキストPDFをAIで複数件解析
 async function parseCaseTextWithAI(text, filename) {
-  const prompt = `以下は不動産成約事例のテキストデータです。売土地・更地・中古一戸建てなど種別を問わず成約事例を全件抽出してください。
-除外するのは「土地＋建物のセット価格（建売）」のみです。売土地・更地は必ず含めてください。
+  const prompt = `以下は不動産成約事例のテキストデータです。中古一戸建ての成約事例を全件抽出してください。
+新築は除外してください。
 以下のJSON配列のみで返してください（他のテキスト不要）：
-[{"name":"所在地（市区町村＋丁目）","date":"YYYY/MM/DD","price":成約価格の数字（円）,"landArea":土地面積の数字（㎡）,"buildArea":建物面積の数字（㎡、売土地・更地の場合は0）,"age":築年数の数字（売土地・更地の場合は0）},...]
+[{"name":"所在地（市区町村＋丁目）","date":"YYYY/MM/DD","price":成約価格の数字（円）,"landArea":土地面積の数字（㎡）,"buildArea":建物面積の数字（㎡）,"age":築年数の数字},...]
 
 【面積の読み取り注意】
-- 土地面積：「公簿150.49㎡」「土地面積 118.08㎡」「面積 118.08 ㎡」「318.03㎡」など表記が様々。数字のみ抽出。
-- 建物面積：「延べ 94.41㎡」「建物面積 119.24㎡」「1階53.01㎡ 2階41.40㎡（→合計94.41）」など。延べ床・合計面積を使う。売土地は0。
-- 万円表記は円に変換（例：1,580万円→15800000、998万円→9980000）
-- 築年数は西暦換算（平成9年→1997年→2026-1997=29年）。売土地・更地は0。
-- 同一物件が複数号地として列挙されている場合は各号地を別件として抽出。
+- 土地面積：「公簿150.49㎡」「土地面積 118.08㎡」「面積 118.08 ㎡」など表記が様々。数字のみ抽出。
+- 建物面積：「延べ 94.41㎡」「建物面積 119.24㎡」「1階53.01㎡ 2階41.40㎡（→合計94.41）」など。延べ床・合計面積を使う。
+- 万円表記は円に変換（例：1,580万円→15800000）
+- 築年数は西暦換算（平成9年→1997年→2026-1997=29年）
 不明な項目は0。JSONのみ返答。
 
 テキスト：
-${text.slice(0, 4000)}`;
+${text.slice(0, 3000)}`;
 
   const raw = await callClaude([{role:'user',content:[{type:'text',text:prompt}]}],'不動産成約事例一括抽出。JSON配列のみ返答。');
   try {
@@ -1495,7 +1506,7 @@ async function parseCaseImageWithAI(file) {
   const imgs = await pdfToImages(file, 3);
   const content = [
     ...imgs.map(b64=>({type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}})),
-    {type:'text',text:'不動産成約事例資料です。売土地・更地・中古一戸建てなど種別を問わず成約事例を全件抽出してください。除外するのは土地＋建物のセット価格（建売）のみ。売土地・更地は必ず含めてください。\nJSON配列のみで返してください：\n[{"name":"所在地（市区町村＋丁目）","date":"YYYY/MM/DD","price":成約価格数字（円）,"landArea":土地面積数字（㎡）,"buildArea":建物面積数字（㎡、売土地は0）,"age":築年数数字（売土地は0）},...]\n万円→円変換（998万円→9980000）。同一物件の複数号地は各号地を別件で抽出。不明は0。JSONのみ。'}
+    {type:'text',text:'不動産成約事例資料です。中古一戸建ての成約事例を全件抽出してください。新築は除外。\nJSON配列のみで返してください：\n[{"name":"所在地","date":"YYYY/MM/DD","price":成約価格数字,"landArea":土地面積数字,"buildArea":建物面積数字,"age":築年数数字},...]\n不明は0。JSONのみ。'}
   ];
   const raw = await callClaude([{role:'user',content}],'不動産成約事例一括抽出。JSON配列のみ返答。');
   try {

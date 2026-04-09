@@ -1594,69 +1594,44 @@ function parseCaseTextBasic(text, filename) {
 function parseReinsListText(text, filename) {
   const rows = [];
   const seen = new Set();
-  const yr = new Date().getFullYear();
 
-  // 和暦→西暦変換
-  function waToSeireki(str) {
-    let m;
-    m = str.match(/令和\s*(\d+)年\s*(\d+)月\s*(\d+)日/);
-    if (m) return `${2018+parseInt(m[1])}/${m[2].padStart(2,'0')}/${m[3].padStart(2,'0')}`;
-    m = str.match(/平成\s*(\d+)年\s*(\d+)月\s*(\d+)日/);
-    if (m) return `${1988+parseInt(m[1])}/${m[2].padStart(2,'0')}/${m[3].padStart(2,'0')}`;
-    m = str.match(/昭和\s*(\d+)年\s*(\d+)月\s*(\d+)日/);
-    if (m) return `${1925+parseInt(m[1])}/${m[2].padStart(2,'0')}/${m[3].padStart(2,'0')}`;
-    m = str.match(/(20\d{2})[\/年](\d{1,2})[\/月](\d{1,2})/);
-    if (m) return `${m[1]}/${m[2].padStart(2,'0')}/${m[3].padStart(2,'0')}`;
-    return '';
+  // 和暦→西暦
+  function waToDate(g, y, mo, d) {
+    const base = {令和:2018, 平成:1988, 昭和:1925};
+    const yr = (base[g]||2018) + parseInt(y);
+    return `${yr}/${String(mo).padStart(2,'0')}/${String(d).padStart(2,'0')}`;
   }
 
-  // 万円→円
-  function manToEn(str) {
-    const m = str.match(/([\d,]+(?:\.\d+)?)\s*万円/);
-    if (m) return Math.round(parseFloat(m[1].replace(/,/g,'')) * 10000);
-    const m2 = str.match(/([\d,]+)\s*円/);
-    if (m2) return parseInt(m2[1].replace(/,/g,''));
-    return 0;
-  }
+  // REINS成約一覧の1件パターン：
+  // 物件番号(15桁) 売地 土地面積㎡ 所在地
+  // 取引態様 成約価格万円 用途 ㎡単価万円
+  // 建ぺい率% 坪単価万円
+  // 成約年月日(和暦) 容積率% 接道
+  // ※ 成約価格は3桁以上の万円（100万円以上）、㎡単価は小数点ありの万円
+  const pattern = /(\d{10,15})\s+売地\s+([\d.]+)\s*㎡\s+([^\n]+)\n[^\n]*?(?:専任|売主|一般|専属)\s+([\d,]+(?:\.\d+)?)\s*万円[^\n]*\n[^\n]*\n[^\n]*(令和|平成|昭和)\s*(\d+)年\s*(\d+)月\s*(\d+)日/g;
 
-  // REINS成約事例一覧: 物件番号・売地・土地面積・成約日・価格を抽出
-  const blocks = text.split(/\n(?=\d+\s*\n|No\.\s*\d)/);
-
-  // 方式1: 物件番号15桁+売地+面積+所在地+価格+成約日のパターンで全件抽出
-  const entryPattern = /(\d{15})\s+売地\s+([\d.]+)㎡\s+([^\n]+?)\n[^\n]*?([\d,]+(?:\.\d+)?)\s*万円[^\n]*\n[^\n]*\n[^\n]*?(令和|平成|昭和)\s*(\d+)年\s*(\d+)月\s*(\d+)日/g;
   let m;
-  while ((m = entryPattern.exec(text)) !== null) {
-    const date = waToSeireki(`${m[5]}${m[6]}年${m[7]}月${m[8]}日`);
-    const price = Math.round(parseFloat(m[4].replace(/,/g,'')) * 10000);
+  while ((m = pattern.exec(text)) !== null) {
     const la = parseFloat(m[2]);
-    const name = m[3].trim().replace(/滋賀県/,'');
+    const priceMan = parseFloat(m[4].replace(/,/g,''));
+    // 100万円未満は単価等なので除外
+    if (priceMan < 100) continue;
+    const price = Math.round(priceMan * 10000);
+    const date = waToDate(m[5], m[6], m[7], m[8]);
+    const name = m[3].trim().replace(/^滋賀県/, '').replace(/^大阪府/, '').replace(/^京都府/, '').replace(/^奈良県/, '').replace(/^兵庫県/, '').replace(/^愛知県/, '');
     const key = `${date}_${price}_${la}`;
-    if (!seen.has(key) && price > 0 && la > 0) {
+    if (!seen.has(key)) {
       seen.add(key);
-      rows.push({ name, date, price, landArea:la, buildArea:0, age:0,
-        _lu: la>0?Math.round(price/la):0, _tu: la>0?Math.round(price/la):0 });
-    }
-  }
-
-  if (rows.length > 0) return rows;
-
-  // 方式2: 価格と日付と面積をそれぞれ全部抽出してマッチング
-  const prices = [...text.matchAll(/([\d,]+(?:\.\d+)?)\s*万円/g)].map(x=>Math.round(parseFloat(x[1].replace(/,/g,''))*10000));
-  const dates = [...text.matchAll(/(令和|平成|昭和)\s*(\d+)年\s*(\d+)月\s*(\d+)日/g)].map(x=>waToSeireki(`${x[1]}${x[2]}年${x[3]}月${x[4]}日`));
-  const areas = [...text.matchAll(/([\d.]+)㎡/g)].map(x=>parseFloat(x[1])).filter(a=>a>=50&&a<=2000);
-
-  // 価格・日付・面積の数が揃っているか確認（各行ずつ対応している場合）
-  const count = Math.min(prices.length, dates.length);
-  if (count >= 2) {
-    for (let i=0; i<count; i++) {
-      const la = areas[i] || 0;
-      const key = `${dates[i]}_${prices[i]}_${la}`;
-      if (!seen.has(key) && prices[i]>0) {
-        seen.add(key);
-        rows.push({ name: filename.replace('.pdf',''), date:dates[i], price:prices[i],
-          landArea:la, buildArea:0, age:0,
-          _lu: la>0?Math.round(prices[i]/la):0, _tu: la>0?Math.round(prices[i]/la):0 });
-      }
+      rows.push({
+        name,
+        date,
+        price,
+        landArea: la,
+        buildArea: 0,
+        age: 0,
+        _lu: la > 0 ? Math.round(price / la) : 0,
+        _tu: la > 0 ? Math.round(price / la) : 0,
+      });
     }
   }
 

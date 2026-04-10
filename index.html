@@ -1597,32 +1597,28 @@ function parseCaseTextBasic(text, filename) {
   return row;
 }
 
-// REINS一覧テキストから複数件を正規表現で抽出（APIなし・pdf.jsスペース挿入対応）
+// REINS一覧テキストから複数件を正規表現で抽出（APIなし）
 function parseReinsListText(text, filename) {
   const rows = [];
   const seen = new Set();
 
-  // pdf.jsはPDFの文字間にスペースを挿入するため各文字間のスペースを考慮
-  // 戦略：物件番号+面積 / 成約価格(100万以上) / 成約日 を個別抽出してペアリング
+  // pdf.jsはスペースを挿入するため、各要素を個別抽出してインデックスでペアリング
+  // 重要：坪単価（小数万円）と成約価格（整数万円）を区別する
 
-  // 1. 物件番号(10桁以上)+売地+面積 を順番に抽出
-  const entryPattern = /(\d{10,15})\s+売\s*地\s+([\d.]+)/g;
-  const entries = []; // [{no, area}]
-  let em;
-  while ((em = entryPattern.exec(text)) !== null) {
-    entries.push({ no: em[1], area: parseFloat(em[2]) });
-  }
-
-  // 2. 成約価格(100万円以上)を順番に抽出
-  const pricePattern = /([\d,]+)\s*万\s*円/g;
+  // 1. 成約価格：整数の万円で100万以上のみ（坪単価・㎡単価は小数なので除外）
+  //    例: 998万円 → 9980000、1,027万円 → 10270000
+  const pricePattern = /(\d[\d,]*)\s*万\s*円/g;
   const prices = [];
   let pm;
   while ((pm = pricePattern.exec(text)) !== null) {
-    const man = parseFloat(pm[1].replace(/,/g, ''));
-    if (man >= 100) prices.push(Math.round(man * 10000));
+    const raw = pm[1].replace(/,/g,'');
+    // 小数点なし・100以上のみ成約価格とみなす
+    if (!pm[1].includes('.') && parseInt(raw) >= 100) {
+      prices.push(Math.round(parseInt(raw) * 10000));
+    }
   }
 
-  // 3. 成約年月日を順番に抽出（文字間スペース対応）
+  // 2. 成約年月日（文字間スペース完全対応）
   const datePattern = /(令\s*和|平\s*成|昭\s*和)\s*(\d+)\s*年\s*(\d+)\s*月\s*(\d+)\s*日/g;
   const base = {'令和':2018,'平成':1988,'昭和':1925};
   const dates = [];
@@ -1633,18 +1629,30 @@ function parseReinsListText(text, filename) {
     dates.push(`${yr}/${String(dm[3]).padStart(2,'0')}/${String(dm[4]).padStart(2,'0')}`);
   }
 
-  // 4. 件数チェック（物件番号件数=日付件数=価格件数であることを確認）
-  const count = Math.min(entries.length, prices.length, dates.length);
+  // 3. 土地面積：50〜2000の範囲の数値（小数点あり）
+  //    REINSは「318.03」「213.36」等の2桁以上の小数
+  const areaPattern = /(\d{2,4}\.\d{1,2})/g;
+  const areas = [];
+  let am;
+  while ((am = areaPattern.exec(text)) !== null) {
+    const v = parseFloat(am[1]);
+    if (v >= 50 && v <= 2000) areas.push(v);
+  }
+
+  // 4. 件数は価格と日付の最小値（一致していることを確認）
+  const count = Math.min(prices.length, dates.length);
   if (count < 2) return [];
 
-  // 5. 所在地（都道府県の次の文字列）
-  const locM = text.match(/(?:湖南市|甲賀市|草津市|栗東市|守山市|野洲市|近江八幡市|東近江市|彦根市|長浜市|大津市)(\S{0,10})/);
-  const city = locM ? locM[0].replace(/\s/g,'') : '';
-  const baseName = city || filename.replace('.pdf','');
+  // 5. 所在地を取得（市区町村名）
+  const cityNames = ['湖南市','甲賀市','草津市','栗東市','守山市','野洲市','近江八幡市','東近江市','彦根市','長浜市','大津市','甲西','水口','石部'];
+  let baseName = filename.replace('.pdf','');
+  for (const city of cityNames) {
+    if (text.includes(city)) { baseName = city; break; }
+  }
 
-  // 6. ペアリングして登録
+  // 6. ペアリング
   for (let i = 0; i < count; i++) {
-    const la = entries[i] ? entries[i].area : 0;
+    const la = areas[i] || 0;
     const price = prices[i];
     const date = dates[i];
     const key = `${date}_${price}_${la}`;

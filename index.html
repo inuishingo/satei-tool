@@ -1627,9 +1627,8 @@ function parseReinsListText(text, filename) {
     .filter(a => a >= 50 && a <= 2000);
 
   // 4. 所在地（「湖南市水戸町」等）を抽出
-  const locMatch = text.match(/(?:滋賀県|大阪府|京都府|奈良県|兵庫県|愛知県)[^
-　 ]{2,20}/);
-  const baseName = locMatch ? locMatch[0].replace(/^(?:滋賀県|大阪府|京都府|奈良県|兵庫県|愛知県)/,'') : filename.replace('.pdf','');
+  const locMatch = text.match(/(?:滋賀県|大阪府|京都府|奈良県|兵庫県|愛知県)(\S{2,15})/);
+  const baseName = locMatch ? locMatch[1] : filename.replace('.pdf','');
 
   // 5. 件数は価格・日付・面積の最小値
   const count = Math.min(prices.length, dates.length, areas.length);

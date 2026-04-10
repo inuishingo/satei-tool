@@ -1406,6 +1406,7 @@ async function parseCasePDFs(files) {
       if (hasText) {
         // まず正規表現で複数件パース（REINS一覧等）
         const basicRows = parseReinsListText(text, f.name);
+        console.log(`[parseReins] ${f.name}: ${basicRows.length}件, テキスト先頭200:`, text.slice(0,200));
         if (basicRows.length >= 2) {
           // 複数件取れた場合はAPIなしで登録
           let added = 0;

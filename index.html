@@ -1394,19 +1394,25 @@ async function parseCasePDFs(files) {
       const text = await pdfToText(f);
       const hasText = text.replace(/\s/g,'').length > 80;
 
-      // 図面系ファイルはスキップ
+      // 図面系ファイルは完全スキップ（テキストの有無に関わらず）
       const isZumen = /図面|zmn_list|zumen/i.test(f.name);
-      if (isZumen && !hasText) {
-        addLog('warn', `${f.name}：図面PDFのためスキップ`);
+      if (isZumen) {
+        addLog('warn', `${f.name}：図面PDFのためスキップ（成約事例一覧PDFを使用してください）`);
         renderCaseTable(); calcAvg();
-        if (i < files.length - 1) await new Promise(r => setTimeout(r, 3000));
+        if (i < files.length - 1) await new Promise(r => setTimeout(r, 1000));
         continue;
       }
 
       if (hasText) {
         // まず正規表現で複数件パース（REINS一覧等）
         const basicRows = parseReinsListText(text, f.name);
-        console.log(`[parseReins] ${f.name}: ${basicRows.length}件, テキスト先頭200:`, text.slice(0,200));
+        // デバッグ：実際のテキストを確認
+        const debugText = text.slice(0, 600);
+        console.log(`[parseReins] ${f.name}: ${basicRows.length}件取得`);
+        console.log('[parseReins] テキスト先頭600文字:', debugText);
+        // 物件番号パターンのみのマッチ数確認
+        const numMatches = (text.match(/\d{10,15}\s+売地/g)||[]).length;
+        console.log(`[parseReins] 物件番号+売地パターン: ${numMatches}件`);
         if (basicRows.length >= 2) {
           // 複数件取れた場合はAPIなしで登録
           let added = 0;

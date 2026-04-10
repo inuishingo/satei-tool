@@ -1597,47 +1597,58 @@ function parseCaseTextBasic(text, filename) {
   return row;
 }
 
-// REINS一覧テキストから複数件を正規表現で抽出（APIなし）
+// REINS一覧テキストから複数件を正規表現で抽出（APIなし・スペース挿入対応）
 function parseReinsListText(text, filename) {
   const rows = [];
   const seen = new Set();
 
-  // 和暦→西暦
-  function waToDate(g, y, mo, d) {
-    const base = {令和:2018, 平成:1988, 昭和:1925};
-    const yr = (base[g]||2018) + parseInt(y);
-    return `${yr}/${String(mo).padStart(2,'0')}/${String(d).padStart(2,'0')}`;
-  }
+  // pdf.jsは文字間にスペースを挿入するため、柔軟なパターンで抽出
+  // 戦略：成約価格(100万以上)・成約日・土地面積をそれぞれ全件抽出してインデックスでペアリング
 
-  // REINS成約一覧の1件パターン：
-  // 物件番号(15桁) 売地 土地面積㎡ 所在地
-  // 取引態様 成約価格万円 用途 ㎡単価万円
-  // 建ぺい率% 坪単価万円
-  // 成約年月日(和暦) 容積率% 接道
-  // ※ 成約価格は3桁以上の万円（100万円以上）、㎡単価は小数点ありの万円
-  const pattern = /(\d{10,15})\s+売地\s+([\d.]+)\s*㎡\s+([^\n]+)\n[^\n]*?(?:専任|売主|一般|専属)\s+([\d,]+(?:\.\d+)?)\s*万円[^\n]*\n[^\n]*\n[^\n]*(令和|平成|昭和)\s*(\d+)年\s*(\d+)月\s*(\d+)日/g;
+  // 1. 成約価格（100万円以上のもの）を順番に抽出
+  const priceMatches = [...text.matchAll(/([\d,]+(?:\.\d+)?)\s*万\s*円/g)];
+  const prices = priceMatches
+    .map(m => Math.round(parseFloat(m[1].replace(/,/g,'')) * 10000))
+    .filter(p => p >= 1000000); // 100万円以上
 
-  let m;
-  while ((m = pattern.exec(text)) !== null) {
-    const la = parseFloat(m[2]);
-    const priceMan = parseFloat(m[4].replace(/,/g,''));
-    // 100万円未満は単価等なので除外
-    if (priceMan < 100) continue;
-    const price = Math.round(priceMan * 10000);
-    const date = waToDate(m[5], m[6], m[7], m[8]);
-    const name = m[3].trim().replace(/^滋賀県/, '').replace(/^大阪府/, '').replace(/^京都府/, '').replace(/^奈良県/, '').replace(/^兵庫県/, '').replace(/^愛知県/, '');
-    const key = `${date}_${price}_${la}`;
+  // 2. 成約年月日を順番に抽出（文字間スペース対応）
+  const dateMatches = [...text.matchAll(/(令\s*和|平\s*成|昭\s*和)\s*(\d+)\s*年\s*(\d+)\s*月\s*(\d+)\s*日/g)];
+  const base = {'令和':2018,'平成':1988,'昭和':1925};
+  const dates = dateMatches.map(m => {
+    const g = m[1].replace(/\s/g,'');
+    const yr = (base[g]||2018) + parseInt(m[2]);
+    return `${yr}/${String(m[3]).padStart(2,'0')}/${String(m[4]).padStart(2,'0')}`;
+  });
+
+  // 3. 土地面積（50〜2000㎡の小数点あり数値）を順番に抽出
+  const areaMatches = [...text.matchAll(/(\d+\.\d+)/g)];
+  const areas = areaMatches
+    .map(m => parseFloat(m[1]))
+    .filter(a => a >= 50 && a <= 2000);
+
+  // 4. 所在地（「湖南市水戸町」等）を抽出
+  const locMatch = text.match(/(?:滋賀県|大阪府|京都府|奈良県|兵庫県|愛知県)[^
+　 ]{2,20}/);
+  const baseName = locMatch ? locMatch[0].replace(/^(?:滋賀県|大阪府|京都府|奈良県|兵庫県|愛知県)/,'') : filename.replace('.pdf','');
+
+  // 5. 件数は価格・日付・面積の最小値
+  const count = Math.min(prices.length, dates.length, areas.length);
+  if (count < 2) return []; // 2件未満なら通常パース
+
+  for (let i = 0; i < count; i++) {
+    const key = `${dates[i]}_${prices[i]}_${areas[i]}`;
     if (!seen.has(key)) {
       seen.add(key);
+      const la = areas[i];
       rows.push({
-        name,
-        date,
-        price,
+        name: baseName,
+        date: dates[i],
+        price: prices[i],
         landArea: la,
         buildArea: 0,
         age: 0,
-        _lu: la > 0 ? Math.round(price / la) : 0,
-        _tu: la > 0 ? Math.round(price / la) : 0,
+        _lu: la > 0 ? Math.round(prices[i] / la) : 0,
+        _tu: la > 0 ? Math.round(prices[i] / la) : 0,
       });
     }
   }

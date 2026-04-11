@@ -1663,13 +1663,14 @@ async function parseZumenWithAI(file) {
 ・不動産会社の住所（守山市・草津市等、物件所在地と異なる市区町村）
 ・バス停名・路線名・交通表記（「ライフタウン」「バス停」「駅」等を含む地名）
 ・近隣施設名・学校名・公園名
-・「カーナビ設定：」以外の「～付近」表記は「付近」を除いた住所のみ使用
+
+所在地が特定できない・自信がない場合はnameを必ず空文字""にする（推測で埋めない）。
 
 【土地面積】「土地面積」「公簿」欄のm²値。区画図のm²値でも可。不明なら0。
 【成約情報】ページ最下部「成約価格：XX万円　成約年月日：令和X年X月X日」から取得。
 
 JSON配列のみ（説明不要）：
-[{"name":"所在地","date":"YYYY/MM/DD","price":円整数,"landArea":㎡数値,"buildArea":0,"age":0}]
+[{"name":"所在地（不明・自信なしは空文字）","date":"YYYY/MM/DD","price":円整数,"landArea":㎡数値,"buildArea":0,"age":0}]
 万円→円変換(998万→9980000)。不明は0。`}
     ];
 
@@ -1680,8 +1681,9 @@ JSON配列のみ（説明不要）：
       const arr = JSON.parse(jsonStr);
       arr.forEach(d => {
         if (!d.price || !d.date) return;
+        const addr = normAddr(d.name) || '';
         allRows.push({
-          name: normAddr(d.name) || '',
+          name: addr || '※住所要確認',
           date: d.date,
           price: parseInt(d.price)||0,
           landArea: parseFloat(d.landArea)||0,
@@ -1969,9 +1971,11 @@ function renderCaseTable() {
     const tr = document.createElement('tr');
     tr.dataset.id = row.id;
     if (!row.adopted) tr.classList.add('excl');
+    const needsAddrCheck = row.name === '※住所要確認';
+    if (needsAddrCheck) tr.style.outline = '1px solid #f59e0b';
     tr.innerHTML = `
       <td><div class="cb-wrap"><input type="checkbox" ${row.adopted?'checked':''} onchange="toggleAdopt(${row.id},this.checked)"></div></td>
-      <td><input type="text" class="left" style="background:none;border:none;color:var(--text2);font-size:12px;width:160px;padding:0;" value="${esc(row.name)}" onchange="updRow(${row.id},'name',this.value)"></td>
+      <td><input type="text" class="left" style="background:none;border:none;color:${needsAddrCheck?'#f59e0b':'var(--text2)'};font-size:12px;width:160px;padding:0;" value="${esc(row.name)}" onchange="updRow(${row.id},'name',this.value)" ${needsAddrCheck?'title="住所を手入力してください"':''}></td>
       <td style="text-align:center;"><input type="text" style="background:none;border:none;color:var(--text);font-size:12px;text-align:center;width:88px;" value="${esc(row.date)}" onchange="updRow(${row.id},'date',this.value)"></td>
       <td>${row.price?fmt(row.price)+'円':'−'}</td>
       <td>${row.landArea||'−'}㎡</td>

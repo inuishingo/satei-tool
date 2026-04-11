@@ -1977,6 +1977,8 @@ function parseReinsListText(text, filename) {
       // 所在地：正規化済みbsから都道府県+市区町村+町名を抽出
       const addrM = bs.match(/([^\d]{2,6}[都道府県][^\d]{2,10}[市区町村][^\d]{0,12})/);
       let name = normAddr(addrM ? addrM[1] : bs.match(/([^\d]{2,8}[市区町村][^\d]{0,12})/)?.[1] || filename.replace('.pdf',''));
+      // 取引態様・余分な文字を除去
+      name = name.replace(/(専任|売主|一般|専属|仲介).*/g, '').trim();
 
       rows.push({
         name,

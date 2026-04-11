@@ -1640,6 +1640,7 @@ function parseReinsListText(text, filename) {
 
       // 成約年月日
       const date = parseDate(block);
+      if (i < 2) console.log(`[parseReins BLOCK${i}] date=${date} block先頭100:`, block.slice(0,100));
       if (!date) continue;
 
       // 成約価格：整数万円で100以上（坪単価・㎡単価の小数を除外）

@@ -1439,16 +1439,22 @@ async function parseCasePDFs(files) {
   if (listRows.length > 0) {
     listRows.forEach(lr => {
       // 日付+価格で図面行を検索（価格±1万円の誤差許容）
-      const zRow = zumenRows.find(zr =>
+      const matchedZRows = zumenRows.filter(zr =>
         zr.date === lr.date &&
         Math.abs(zr.price - lr.price) <= 10000
       );
+      const zRow = matchedZRows.length > 0 ? matchedZRows[0] : null;
       const name = (zRow && zRow.name && zRow.name !== '※住所要確認')
         ? zRow.name
         : (lr.name || '');
-      const key = `${lr.date}_${lr.price}`;
+
+      // 同日付・同価格が一覧に複数ある場合：図面の面積に近い方を優先
+      // keyを面積も含めて一意化
+      const key = `${lr.date}_${lr.price}_${lr.landArea}`;
       if (!seen.has(key)) {
         seen.add(key);
+        // seenには日付+価格のみのキーも追加（図面との重複排除用）
+        seen.add(`${lr.date}_${lr.price}`);
         mergedRows.push({...lr, name});
       }
     });
@@ -1572,6 +1578,8 @@ function normAddr(name) {
   if (!name) return name;
   return name
     .replace(/^(北海道|東京都|(?:大阪|京都)府|.{2,3}県)\s*/, '') // 都道府県除去
+    .replace(/付近$/,'')   // 末尾の「付近」除去
+    .replace(/\d+区画.*/,'') // 「18区画」以降除去
     .trim();
 }
 

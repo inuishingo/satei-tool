@@ -1626,32 +1626,34 @@ function parseCaseTextBasic(text, filename) {
 
 // REINS一覧テキストから複数件を正規表現で抽出（APIなし）
 // 図面PDF（zmn_list）をAIで全ページ解析
-// 1ページ1物件。5ページずつバッチでAPIに投げる
+// 1ページ1物件。1ページずつAPIに投げて精度最大化
 async function parseZumenWithAI(file) {
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({data:buf}).promise;
   const totalPages = pdf.numPages;
-  const BATCH = 5; // 1回のAPIコールで処理するページ数
   const allRows = [];
 
-  for (let start = 1; start <= totalPages; start += BATCH) {
-    const end = Math.min(start + BATCH - 1, totalPages);
-    addLog('info', `図面PDF解析中... ${start}〜${end}ページ / ${totalPages}ページ`);
+  // プログレスバー表示
+  const progWrap = document.getElementById('cProg');
+  const progBar = document.getElementById('cProgBar');
+  if (progWrap) progWrap.style.display = 'block';
+  if (progBar) progBar.style.width = '0%';
 
-    // バッチ分の画像を生成
-    const imgs = [];
-    for (let p = start; p <= end; p++) {
-      const pg = await pdf.getPage(p);
-      const vp = pg.getViewport({scale:1.5});
-      const canvas = document.createElement('canvas');
-      canvas.width = vp.width; canvas.height = vp.height;
-      await pg.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
-      imgs.push(canvas.toDataURL('image/jpeg',0.82).split(',')[1]);
-    }
+  for (let p = 1; p <= totalPages; p++) {
+    addLog('info', `図面PDF解析中... ${p} / ${totalPages} ページ`);
+    if (progBar) progBar.style.width = `${Math.round((p-1)/totalPages*100)}%`;
+
+    // 1ページ画像生成（高解像度で精度アップ）
+    const pg = await pdf.getPage(p);
+    const vp = pg.getViewport({scale:1.8});
+    const canvas = document.createElement('canvas');
+    canvas.width = vp.width; canvas.height = vp.height;
+    await pg.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
+    const b64 = canvas.toDataURL('image/jpeg',0.88).split(',')[1];
 
     const content = [
-      ...imgs.map(b64=>({type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}})),
-      {type:'text',text:`不動産成約事例の図面PDF（${imgs.length}ページ）。1ページ=1物件。各ページから全件抽出。
+      {type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}},
+      {type:'text',text:`不動産成約事例の図面PDF（1ページ・1物件）。このページから情報を抽出してください。
 
 【所在地の抽出ルール（厳守）】
 優先順：
@@ -1666,38 +1668,41 @@ async function parseZumenWithAI(file) {
 
 所在地が特定できない・自信がない場合はnameを必ず空文字""にする（推測で埋めない）。
 
-【土地面積】成約した号地・区画の面積のみ取得。ページ下部の成約価格・成約年月日と対応する号地の面積を使う。複数号地の一覧表がある場合は成約済みの号地の面積のみ。「土地面積」「公簿」欄、または成約号地に対応する区画図のm²値。不明なら0。
+【土地面積】成約した号地の面積のみ。ページ最下部の成約価格・成約年月日と対応する号地の面積を使う。複数号地の一覧表がある場合は成約済みの号地のみ。不明なら0。
 【成約情報】ページ最下部「成約価格：XX万円　成約年月日：令和X年X月X日」から取得。
 
-JSON配列のみ（説明不要）：
-[{"name":"所在地（不明・自信なしは空文字）","date":"YYYY/MM/DD","price":円整数,"landArea":㎡数値,"buildArea":0,"age":0}]
+JSONのみ返答（1件）：
+{"name":"所在地（不明・自信なしは空文字）","date":"YYYY/MM/DD","price":円整数,"landArea":㎡数値,"buildArea":0,"age":0}
 万円→円変換(998万→9980000)。不明は0。`}
     ];
 
-    const raw = await callClaude([{role:'user',content}],'不動産成約事例一括抽出。JSON配列のみ返答。');
     try {
-      const jsonStr = raw.match(/\[[\s\S]*\]/)?.[0];
-      if (!jsonStr) continue;
-      const arr = JSON.parse(jsonStr);
-      arr.forEach(d => {
-        if (!d.price || !d.date) return;
-        const addr = normAddr(d.name) || '';
-        allRows.push({
-          name: addr || '※住所要確認',
-          date: d.date,
-          price: parseInt(d.price)||0,
-          landArea: parseFloat(d.landArea)||0,
-          buildArea: parseFloat(d.buildArea)||0,
-          age: safeAge(d.age),
-          _lu: d.landArea>0 ? Math.round(d.price/d.landArea) : 0,
-          _tu: (d.landArea+d.buildArea)>0 ? Math.round(d.price/(d.landArea+d.buildArea)) : 0,
-        });
-      });
-    } catch(e) { console.warn('図面バッチ解析エラー:', e); }
+      const raw = await callClaude([{role:'user',content}],'不動産成約事例抽出。JSONのみ返答。');
+      const jsonStr = raw.match(/\{[\s\S]*\}/)?.[0];
+      if (jsonStr) {
+        const d = JSON.parse(jsonStr);
+        if (d.price && d.date) {
+          const addr = normAddr(d.name) || '';
+          allRows.push({
+            name: addr || '※住所要確認',
+            date: d.date,
+            price: parseInt(d.price)||0,
+            landArea: parseFloat(d.landArea)||0,
+            buildArea: parseFloat(d.buildArea)||0,
+            age: safeAge(d.age),
+            _lu: d.landArea>0 ? Math.round(d.price/d.landArea) : 0,
+            _tu: (d.landArea+d.buildArea)>0 ? Math.round(d.price/(d.landArea+d.buildArea)) : 0,
+          });
+        }
+      }
+    } catch(e) { console.warn(`図面${p}ページ解析エラー:`, e); }
 
-    // バッチ間インターバル（レートリミット対策）
-    if (end < totalPages) await new Promise(r => setTimeout(r, 3000));
+    // ページ間インターバル（レートリミット対策）
+    if (p < totalPages) await new Promise(r => setTimeout(r, 2000));
   }
+
+  if (progBar) progBar.style.width = '100%';
+  setTimeout(() => { if (progWrap) progWrap.style.display = 'none'; }, 1000);
 
   return allRows;
 }

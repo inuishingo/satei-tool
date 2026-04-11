@@ -1394,25 +1394,35 @@ async function parseCasePDFs(files) {
       const text = await pdfToText(f);
       const hasText = text.replace(/\s/g,'').length > 80;
 
-      // 図面系ファイル（zmn_list等）→ページごとに成約事例を抽出
+      // 図面系ファイル（zmn_list等）→ AIで全ページ解析
       const isZumen = /図面|zmn_list|zumen/i.test(f.name);
       if (isZumen) {
-        addLog('info', `${f.name}：図面PDF → 成約事例抽出中...`);
-        const zRows = parseZumenPdf(text, f.name);
-        let added = 0;
-        zRows.forEach(row => {
-          if (!S.cases.find(r => r.date === row.date && r.price === row.price && Math.abs((r.landArea||0)-(row.landArea||0)) < 1)) {
-            S.cases.push({...row, id:Date.now()+Math.random(), adopted:true});
-            added++;
-          }
-        });
-        addLog('ok', `${f.name}：図面PDF ${added}件追加`);
+        if (!S.apiKey) {
+          addLog('warn', `${f.name}：図面PDFはAPIキーが必要です`);
+          renderCaseTable(); calcAvg();
+          continue;
+        }
+        addLog('info', `${f.name}：図面PDF → AI解析中（全ページ）...`);
+        try {
+          const zRows = await parseZumenWithAI(f);
+          let added = 0;
+          zRows.forEach(row => {
+            if (!S.cases.find(r => r.date === row.date && r.price === row.price && Math.abs((r.landArea||0)-(row.landArea||0)) < 1)) {
+              S.cases.push({...row, id:Date.now()+Math.random(), adopted:true});
+              added++;
+            }
+          });
+          addLog('ok', `${f.name}：図面PDF AI解析 ${added}件追加`);
+        } catch(e) {
+          addLog('warn', `${f.name}：図面PDF解析エラー - ${e.message}`);
+        }
         renderCaseTable(); calcAvg();
         if (i < files.length - 1) await new Promise(r => setTimeout(r, 1000));
         continue;
       }
 
       if (hasText) {
+
         // まず正規表現で複数件パース（REINS一覧等）
         const basicRows = parseReinsListText(text, f.name);
         // デバッグ：実際のテキストを確認
@@ -1607,7 +1617,63 @@ function parseCaseTextBasic(text, filename) {
 }
 
 // REINS一覧テキストから複数件を正規表現で抽出（APIなし）
-// 図面PDF（zmn_list）から成約事例を抽出
+// 図面PDF（zmn_list）をAIで全ページ解析
+// 1ページ1物件。5ページずつバッチでAPIに投げる
+async function parseZumenWithAI(file) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+  const totalPages = pdf.numPages;
+  const BATCH = 5; // 1回のAPIコールで処理するページ数
+  const allRows = [];
+
+  for (let start = 1; start <= totalPages; start += BATCH) {
+    const end = Math.min(start + BATCH - 1, totalPages);
+    addLog('info', `図面PDF解析中... ${start}〜${end}ページ / ${totalPages}ページ`);
+
+    // バッチ分の画像を生成
+    const imgs = [];
+    for (let p = start; p <= end; p++) {
+      const pg = await pdf.getPage(p);
+      const vp = pg.getViewport({scale:1.5});
+      const canvas = document.createElement('canvas');
+      canvas.width = vp.width; canvas.height = vp.height;
+      await pg.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
+      imgs.push(canvas.toDataURL('image/jpeg',0.82).split(',')[1]);
+    }
+
+    const content = [
+      ...imgs.map(b64=>({type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}})),
+      {type:'text',text:`不動産成約事例の図面PDF（${imgs.length}ページ）。1ページ=1物件。各ページから全件抽出してください。\n所在地は番地・号地まで含めて抽出（例：湖南市水戸町22-52）。「所在地」欄を優先。不動産会社住所は除外。\n成約価格・成約年月日はページ最下部の「成約価格：XX万円　成約年月日：令和X年X月X日」から取得。\nJSON配列のみ返答：[{"name":"所在地（番地まで）","date":"YYYY/MM/DD","price":円,"landArea":㎡,"buildArea":0,"age":0}]\n万円→円変換(998万→9980000)。不明は0。JSONのみ。`}
+    ];
+
+    const raw = await callClaude([{role:'user',content}],'不動産成約事例一括抽出。JSON配列のみ返答。');
+    try {
+      const jsonStr = raw.match(/\[[\s\S]*\]/)?.[0];
+      if (!jsonStr) continue;
+      const arr = JSON.parse(jsonStr);
+      arr.forEach(d => {
+        if (!d.price || !d.date) return;
+        allRows.push({
+          name: d.name || '',
+          date: d.date,
+          price: parseInt(d.price)||0,
+          landArea: parseFloat(d.landArea)||0,
+          buildArea: parseFloat(d.buildArea)||0,
+          age: safeAge(d.age),
+          _lu: d.landArea>0 ? Math.round(d.price/d.landArea) : 0,
+          _tu: (d.landArea+d.buildArea)>0 ? Math.round(d.price/(d.landArea+d.buildArea)) : 0,
+        });
+      });
+    } catch(e) { console.warn('図面バッチ解析エラー:', e); }
+
+    // バッチ間インターバル（レートリミット対策）
+    if (end < totalPages) await new Promise(r => setTimeout(r, 3000));
+  }
+
+  return allRows;
+}
+
+// 図面PDF（zmn_list）から成約事例を正規表現で抽出（フォールバック用）
 // 構造：1ページ1物件、各ページ末尾に「成約価格：XXX万円　成約年月日：令和X年X月X日」
 function parseZumenPdf(text, filename) {
   const rows = [];

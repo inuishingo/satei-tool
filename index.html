@@ -1602,72 +1602,129 @@ function parseReinsListText(text, filename) {
   const rows = [];
   const seen = new Set();
 
-  // pdf.jsはスペースを挿入するため、各要素を個別抽出してインデックスでペアリング
-  // 重要：坪単価（小数万円）と成約価格（整数万円）を区別する
+  // ---- 方式1: REINS成約事例一覧PDF（物件番号アンカー方式） ----
+  // 構造：物件番号(12桁前後) 売地/中古一戸建て 面積 所在地
+  //        取引態様 成約価格 用途地域 ㎡単価 ...
+  //        建ぺい率 坪単価
+  //        成約年月日 容積率 接道状況
+  // → 物件番号を起点に前後テキストブロックから各値を抽出
 
-  // 1. 成約価格：整数の万円で100万以上のみ（坪単価・㎡単価は小数なので除外）
-  //    例: 998万円 → 9980000、1,027万円 → 10270000
-  const pricePattern = /(\d[\d,]*)\s*万\s*円/g;
-  const prices = [];
-  let pm;
-  while ((pm = pricePattern.exec(text)) !== null) {
-    const raw = pm[1].replace(/,/g,'');
-    // 小数点なし・100以上のみ成約価格とみなす
-    if (!pm[1].includes('.') && parseInt(raw) >= 100) {
-      prices.push(Math.round(parseInt(raw) * 10000));
+  const base = {'令和':2018,'平成':1988,'昭和':1925};
+  const dateRx = /(令\s*和|平\s*成|昭\s*和)\s*(\d+)\s*年\s*(\d+)\s*月\s*(\d+)\s*日/;
+
+  function parseDate(s) {
+    const m = s.match(dateRx);
+    if (!m) return null;
+    const g = m[1].replace(/\s/g,'');
+    const yr = (base[g]||2018) + parseInt(m[2]);
+    return `${yr}/${String(m[3]).padStart(2,'0')}/${String(m[4]).padStart(2,'0')}`;
+  }
+
+  // 物件番号の位置を全件取得（10〜15桁の数字）
+  const propNumRx = /\b(\d{10,15})\b/g;
+  const propPositions = [];
+  let nm;
+  while ((nm = propNumRx.exec(text)) !== null) {
+    propPositions.push({ pos: nm.index, end: nm.index + nm[0].length });
+  }
+
+  if (propPositions.length >= 2) {
+    // 各物件番号から次の物件番号までをブロックとして処理
+    for (let i = 0; i < propPositions.length; i++) {
+      const start = propPositions[i].pos;
+      const end = i + 1 < propPositions.length ? propPositions[i+1].pos : text.length;
+      const block = text.slice(start, end);
+
+      // 成約年月日
+      const date = parseDate(block);
+      if (!date) continue;
+
+      // 成約価格：整数万円で100以上（坪単価・㎡単価の小数を除外）
+      // 「998万円」「1,027万円」を拾う。「3.2万円」「10.4万円」は除外
+      const priceRx = /(?<!\.\d{0,3})\b(\d[\d,]+)\s*万\s*円/g;
+      let price = 0;
+      let pm2;
+      while ((pm2 = priceRx.exec(block)) !== null) {
+        const raw = pm2[1].replace(/,/g,'');
+        // 小数点なし・100以上
+        if (!pm2[1].includes('.') && parseInt(raw) >= 100) {
+          price = Math.round(parseInt(raw) * 10000);
+          break; // 最初に見つかった成約価格を採用
+        }
+      }
+      if (!price) continue;
+
+      // 土地面積：2桁以上.小数（50〜2000）
+      const areaRx = /(\d{2,4}\.\d{1,2})/g;
+      let landArea = 0;
+      let am2;
+      while ((am2 = areaRx.exec(block)) !== null) {
+        const v = parseFloat(am2[1]);
+        if (v >= 50 && v <= 2000) { landArea = v; break; }
+      }
+
+      const key = `${date}_${price}_${landArea}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      // 所在地（都道府県〜市区町村）
+      const addrM = block.match(/([^\s]{2,5}[都道府県市区町村][^\s]{0,15})/);
+      let name = addrM ? addrM[1].replace(/\s/g,'') : filename.replace('.pdf','');
+
+      rows.push({
+        name,
+        date,
+        price,
+        landArea,
+        buildArea: 0,
+        age: 0,
+        _lu: landArea > 0 ? Math.round(price / landArea) : 0,
+        _tu: landArea > 0 ? Math.round(price / landArea) : 0,
+      });
     }
   }
 
-  // 2. 成約年月日（文字間スペース完全対応）
-  const datePattern = /(令\s*和|平\s*成|昭\s*和)\s*(\d+)\s*年\s*(\d+)\s*月\s*(\d+)\s*日/g;
-  const base = {'令和':2018,'平成':1988,'昭和':1925};
-  const dates = [];
-  let dm;
-  while ((dm = datePattern.exec(text)) !== null) {
-    const g = dm[1].replace(/\s/g,'');
-    const yr = (base[g]||2018) + parseInt(dm[2]);
-    dates.push(`${yr}/${String(dm[3]).padStart(2,'0')}/${String(dm[4]).padStart(2,'0')}`);
-  }
-
-  // 3. 土地面積：50〜2000の範囲の数値（小数点あり）
-  //    REINSは「318.03」「213.36」等の2桁以上の小数
-  const areaPattern = /(\d{2,4}\.\d{1,2})/g;
-  const areas = [];
-  let am;
-  while ((am = areaPattern.exec(text)) !== null) {
-    const v = parseFloat(am[1]);
-    if (v >= 50 && v <= 2000) areas.push(v);
-  }
-
-  // 4. 件数は価格と日付の最小値（一致していることを確認）
-  const count = Math.min(prices.length, dates.length);
-  if (count < 2) return [];
-
-  // 5. 所在地を取得（市区町村名）
-  const cityNames = ['湖南市','甲賀市','草津市','栗東市','守山市','野洲市','近江八幡市','東近江市','彦根市','長浜市','大津市','甲西','水口','石部'];
-  let baseName = filename.replace('.pdf','');
-  for (const city of cityNames) {
-    if (text.includes(city)) { baseName = city; break; }
-  }
-
-  // 6. ペアリング
-  for (let i = 0; i < count; i++) {
-    const la = areas[i] || 0;
-    const price = prices[i];
-    const date = dates[i];
-    const key = `${date}_${price}_${la}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      rows.push({
-        name: baseName,
-        date,
-        price,
-        landArea: la,
-        buildArea: 0,
-        age: 0,
-        _lu: la > 0 ? Math.round(price / la) : 0,
-        _tu: la > 0 ? Math.round(price / la) : 0,
-      });
+  // ---- 方式2: フォールバック（物件番号が取れない場合） ----
+  // 旧方式：日付と成約価格のペアリング（図面PDF等のバックアップ）
+  if (rows.length < 2) {
+    const prices2 = [];
+    const priceRx2 = /(\d[\d,]*)\s*万\s*円/g;
+    let p2;
+    while ((p2 = priceRx2.exec(text)) !== null) {
+      const raw = p2[1].replace(/,/g,'');
+      if (!p2[1].includes('.') && parseInt(raw) >= 100) {
+        prices2.push(Math.round(parseInt(raw) * 10000));
+      }
+    }
+    const dates2 = [];
+    const dateRx2 = /(令\s*和|平\s*成|昭\s*和)\s*(\d+)\s*年\s*(\d+)\s*月\s*(\d+)\s*日/g;
+    let d2;
+    while ((d2 = dateRx2.exec(text)) !== null) {
+      const g = d2[1].replace(/\s/g,'');
+      const yr = (base[g]||2018) + parseInt(d2[2]);
+      dates2.push(`${yr}/${String(d2[3]).padStart(2,'0')}/${String(d2[4]).padStart(2,'0')}`);
+    }
+    const areas2 = [];
+    const areaRx2 = /(\d{2,4}\.\d{1,2})/g;
+    let a2;
+    while ((a2 = areaRx2.exec(text)) !== null) {
+      const v = parseFloat(a2[1]);
+      if (v >= 50 && v <= 2000) areas2.push(v);
+    }
+    const count = Math.min(prices2.length, dates2.length);
+    let baseName = filename.replace('.pdf','');
+    const cityNames = ['湖南市','甲賀市','草津市','栗東市','守山市','野洲市','近江八幡市','東近江市','彦根市','長浜市','大津市'];
+    for (const c of cityNames) { if (text.includes(c)) { baseName = c; break; } }
+    for (let i = 0; i < count; i++) {
+      const la = areas2[i] || 0;
+      const price = prices2[i];
+      const date = dates2[i];
+      const key = `${date}_${price}_${la}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        rows.push({ name: baseName, date, price, landArea: la, buildArea: 0, age: 0,
+          _lu: la>0?Math.round(price/la):0, _tu: la>0?Math.round(price/la):0 });
+      }
     }
   }
 

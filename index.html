@@ -1448,21 +1448,10 @@ async function parseCasePDFs(files) {
         ? zRow.name
         : (lr.name || '');
 
-      // 同日付・同価格が一覧に複数ある場合：図面の面積に最も近い1件のみ採用
-      const samePriceDate = listRows.filter(r =>
-        r.date === lr.date && Math.abs(r.price - lr.price) <= 10000
-      );
-      if (samePriceDate.length > 1 && zRow && zRow.landArea > 0) {
-        const closest = samePriceDate.reduce((a, b) =>
-          Math.abs(a.landArea - zRow.landArea) <= Math.abs(b.landArea - zRow.landArea) ? a : b
-        );
-        if (closest !== lr) return; // 他の行の方が図面に近ければスキップ
-      }
-
+      // 一覧PDFの面積が正とするため、日付+価格+面積で一意化して全件登録
       const key = `${lr.date}_${lr.price}_${lr.landArea}`;
       if (!seen.has(key)) {
         seen.add(key);
-        seen.add(`${lr.date}_${lr.price}`);
         mergedRows.push({...lr, name});
       }
     });
@@ -1765,19 +1754,12 @@ async function parseZumenWithAI(file) {
 ・「所在地」欄に「14番36・14番38」等の地番があれば「湖南市水戸町14番36・14番38」のように結合して使う
 ・「南市水戸町」等の欠損は「湖南市水戸町」に補完してよい
 
-【土地面積】
-・成約した号地1区画の㎡面積のみ（絶対に複数区画の面積を合算しない）
-・単位は必ず㎡（平方メートル）。坪数は使わない（318.03㎡と96.2坪が並んでいたら318.03を使う）
-・ページ最下部「成約価格：XX万円　成約年月日：XX」の価格に対応する号地の㎡面積を使う
-・複数号地の一覧表がある場合：㎡欄の数値のみ参照。坪欄・坪単価欄の数値は絶対に使わない
-・「済」「商談中」「売却済」「建売」と表示されている号地の面積は使わない（成約済みの別物件）
-・成約価格と号地の土地価格が一致するか近い号地の面積を選ぶ
-・面積が特定できない場合は0にする（複数候補があるときは合算せず0にする）
 【成約情報】ページ最下部「成約価格：XX万円　成約年月日：令和X年X月X日」から取得。
+※土地面積は別途一覧PDFから取得するため不要。landAreaは常に0でよい。
 
 JSONのみ返答（1件）：
-{"name":"所在地（不明・自信なしは空文字）","date":"YYYY/MM/DD","price":円整数,"landArea":㎡数値,"buildArea":0,"age":0}
-万円→円変換(998万→9980000)。不明は0。`}
+{"name":"所在地（不明・自信なしは空文字）","date":"YYYY/MM/DD","price":円整数,"landArea":0,"buildArea":0,"age":0}
+万円→円変換(998万→9980000)。`}
     ];
 
     try {

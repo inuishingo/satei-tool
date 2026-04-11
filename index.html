@@ -1394,10 +1394,19 @@ async function parseCasePDFs(files) {
       const text = await pdfToText(f);
       const hasText = text.replace(/\s/g,'').length > 80;
 
-      // 図面系ファイルは完全スキップ（テキストの有無に関わらず）
+      // 図面系ファイル（zmn_list等）→ページごとに成約事例を抽出
       const isZumen = /図面|zmn_list|zumen/i.test(f.name);
       if (isZumen) {
-        addLog('warn', `${f.name}：図面PDFのためスキップ（成約事例一覧PDFを使用してください）`);
+        addLog('info', `${f.name}：図面PDF → 成約事例抽出中...`);
+        const zRows = parseZumenPdf(text, f.name);
+        let added = 0;
+        zRows.forEach(row => {
+          if (!S.cases.find(r => r.date === row.date && r.price === row.price && Math.abs((r.landArea||0)-(row.landArea||0)) < 1)) {
+            S.cases.push({...row, id:Date.now()+Math.random(), adopted:true});
+            added++;
+          }
+        });
+        addLog('ok', `${f.name}：図面PDF ${added}件追加`);
         renderCaseTable(); calcAvg();
         if (i < files.length - 1) await new Promise(r => setTimeout(r, 1000));
         continue;
@@ -1598,6 +1607,105 @@ function parseCaseTextBasic(text, filename) {
 }
 
 // REINS一覧テキストから複数件を正規表現で抽出（APIなし）
+// 図面PDF（zmn_list）から成約事例を抽出
+// 構造：1ページ1物件、各ページ末尾に「成約価格：XXX万円　成約年月日：令和X年X月X日」
+function parseZumenPdf(text, filename) {
+  const rows = [];
+  const seen = new Set();
+  const base = {'令和':2018,'平成':1988,'昭和':1925};
+
+  // 正規化関数（文字間スペース・異体字除去）
+  function norm(s) {
+    return s.replace(/[\s　]/g,'')
+      .replace(/⽉/g,'月').replace(/⽇/g,'日')
+      .replace(/⽔/g,'水').replace(/⼾/g,'戸')
+      .replace(/⼀/g,'一').replace(/⽅/g,'方')
+      .replace(/，/g,',');
+  }
+
+  // 「成約価格：XXX万円　成約年月日：令和X年X月X日」パターンでページ境界を分割
+  // このパターンが各ページ末尾にある
+  const pageMarkerRx = /成\s*約\s*価\s*格\s*[：:]\s*([\d,，]+)\s*万\s*円[\s\S]{0,30}?成\s*約\s*年\s*月\s*日\s*[：:]\s*(令[\s\S]{0,3}和|平[\s\S]{0,3}成|昭[\s\S]{0,3}和)\s*([\d\s]{1,4})年\s*([\d\s]{1,2})月\s*([\d\s]{1,2})日/g;
+
+  let m;
+  const markers = [];
+  while ((m = pageMarkerRx.exec(text)) !== null) {
+    const rawPrice = m[1].replace(/[,，\s]/g,'');
+    const price = parseInt(rawPrice) >= 100 ? Math.round(parseInt(rawPrice) * 10000) : 0;
+    if (!price) continue;
+
+    const era = norm(m[2]);
+    const yr = (base[era]||2018) + parseInt(m[3].replace(/\s/g,''));
+    const mo = m[4].replace(/\s/g,'').padStart(2,'0');
+    const dy = m[5].replace(/\s/g,'').padStart(2,'0');
+    const date = `${yr}/${mo}/${dy}`;
+
+    // このマーカーより前のテキストブロック（前のマーカーから）
+    const blockStart = markers.length > 0 ? markers[markers.length-1].end : 0;
+    const blockEnd = m.index + m[0].length;
+    const block = norm(text.slice(blockStart, blockEnd));
+
+    // 所在地：「所在地」ラベルの後、または都道府県パターン
+    let name = '';
+    const addrM = block.match(/所在地[^\d]{0,5}([^\d]{4,30}?(?:町|丁目|番地?|号)[^\d]{0,10}[\d－\-]+(?:番地?|号)?[\d－\-]*)/);
+    if (addrM) {
+      name = addrM[1];
+    } else {
+      // 都道府県から始まる住所
+      const prefM = block.match(/((?:滋賀|大阪|京都|兵庫|奈良|愛知|岐阜|三重)[^\d]{2,20}(?:市|区|町|村)[^\d]{0,20}[\d－\-]+)/);
+      if (prefM) name = prefM[1];
+      else {
+        // 市区町村のみ
+        const cityM = block.match(/([^\d]{2,8}(?:市|区|町|村)[^\d]{0,15})/);
+        name = cityM ? cityM[1] : filename.replace('.pdf','');
+      }
+    }
+
+    // 土地面積
+    const areaM = block.match(/土地面積[^\d]{0,5}([\d.]+)/);
+    let landArea = 0;
+    if (areaM) {
+      const v = parseFloat(areaM[1]);
+      if (v >= 10 && v <= 5000) landArea = v;
+    }
+    if (!landArea) {
+      // 公簿・実測から
+      const areaM2 = block.match(/公簿\s*([\d.]+)/);
+      if (areaM2) {
+        const v = parseFloat(areaM2[1]);
+        if (v >= 10 && v <= 5000) landArea = v;
+      }
+    }
+    if (!landArea) {
+      // 面積単独パターン（50〜2000）
+      const nums = block.match(/(\d{2,4}\.\d{1,2})/g)||[];
+      for (const n of nums) {
+        const v = parseFloat(n);
+        if (v >= 50 && v <= 2000) { landArea = v; break; }
+      }
+    }
+
+    markers.push({ end: blockEnd, price, date, name, landArea });
+
+    const key = `${date}_${price}_${landArea}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    rows.push({
+      name: name || filename.replace('.pdf',''),
+      date,
+      price,
+      landArea,
+      buildArea: 0,
+      age: 0,
+      _lu: landArea > 0 ? Math.round(price / landArea) : 0,
+      _tu: landArea > 0 ? Math.round(price / landArea) : 0,
+    });
+  }
+
+  return rows;
+}
+
 function parseReinsListText(text, filename) {
   const rows = [];
   const seen = new Set();
@@ -1680,9 +1788,9 @@ function parseReinsListText(text, filename) {
       if (seen.has(key)) continue;
       seen.add(key);
 
-      // 所在地（都道府県〜市区町村）
-      const addrM = block.match(/([^\s]{2,5}[都道府県市区町村][^\s]{0,15})/);
-      let name = addrM ? addrM[1].replace(/\s/g,'') : filename.replace('.pdf','');
+      // 所在地：正規化済みbsから都道府県+市区町村+町名を抽出
+      const addrM = bs.match(/([^\d]{2,6}[都道府県][^\d]{2,10}[市区町村][^\d]{0,12})/);
+      let name = addrM ? addrM[1] : bs.match(/([^\d]{2,8}[市区町村][^\d]{0,12})/)?.[1] || filename.replace('.pdf','');
 
       rows.push({
         name,

@@ -1620,13 +1620,16 @@ function parseReinsListText(text, filename) {
     return `${yr}/${String(m[3]).padStart(2,'0')}/${String(m[4]).padStart(2,'0')}`;
   }
 
-  // 物件番号の位置を全件取得（10〜15桁の数字）
-  const propNumRx = /\b(\d{10,15})\b/g;
+  // 物件番号の位置を全件取得（10〜15桁の数字、前後はスペースか行頭行末）
+  const propNumRx = /(?:^|[\s　])(\d{10,15})(?=[\s　]|$)/gm;
   const propPositions = [];
   let nm;
   while ((nm = propNumRx.exec(text)) !== null) {
-    propPositions.push({ pos: nm.index, end: nm.index + nm[0].length });
+    // マッチ全体の中から数字部分の位置を特定
+    const numStart = nm.index + nm[0].indexOf(nm[1]);
+    propPositions.push({ pos: numStart, end: numStart + nm[1].length });
   }
+  console.log(`[parseReins NEW] 物件番号検出数: ${propPositions.length}件`);
 
   if (propPositions.length >= 2) {
     // 各物件番号から次の物件番号までをブロックとして処理

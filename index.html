@@ -1612,9 +1612,12 @@ function parseReinsListText(text, filename) {
   const base = {'令和':2018,'平成':1988,'昭和':1925};
 
   function parseDate(s) {
-    // pdf.jsが「令 和   6 年   3 月   9 日」のように文字間にスペースを挿入するため
-    // スペースを除去してからマッチ（ただし数字間のスペースは保持が必要なので元文字列でも試みる）
-    const stripped = s.replace(/\s/g,'').replace(/　/g,'');
+    // pdf.jsが文字間スペース挿入＋「⽉」「⽇」等の異体字を出力するため
+    // スペース除去後、月・日の異体字を正規化してからマッチ
+    const stripped = s.replace(/[\s　]/g,'')
+      .replace(/⽉/g,'月').replace(/⽇/g,'日')
+      .replace(/⽔/g,'水').replace(/⼾/g,'戸')
+      .replace(/⼀/g,'一').replace(/⽅/g,'方');
     const rx = /(令和|平成|昭和)(\d{1,2})年(\d{1,2})月(\d{1,2})日/;
     const m = stripped.match(rx);
     if (!m) return null;
@@ -1645,8 +1648,11 @@ function parseReinsListText(text, filename) {
       if (i < 2) console.log(`[parseReins BLOCK${i}] date=${date} blockFULL:`, JSON.stringify(block));
       if (!date) continue;
 
-      // スペース除去済みブロック（価格・面積抽出用）
-      const bs = block.replace(/[\s　]/g,'');
+      // スペース除去＋異体字正規化済みブロック（価格・面積抽出用）
+      const bs = block.replace(/[\s　]/g,'')
+        .replace(/⽉/g,'月').replace(/⽇/g,'日')
+        .replace(/⽔/g,'水').replace(/⼾/g,'戸')
+        .replace(/⼀/g,'一').replace(/⽅/g,'方');
 
       // 成約価格：整数万円で100以上（坪単価・㎡単価の小数を除外）
       const priceRx = /(\d[\d,]+)万円/g;

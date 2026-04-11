@@ -1478,7 +1478,7 @@ async function parseCasePDFs(files) {
   // S.casesに追加
   let added = 0;
   mergedRows.forEach(row => {
-    if (!S.cases.find(r => r.date === row.date && r.price === row.price)) {
+    if (!S.cases.find(r => r.date === row.date && r.price === row.price && r.landArea === row.landArea)) {
       const lu = row.landArea>0 ? Math.round(row.price/row.landArea) : 0;
       S.cases.push({...row, id:Date.now()+Math.random(), adopted:true, _lu:lu, _tu:lu});
       added++;

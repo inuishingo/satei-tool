@@ -1386,40 +1386,115 @@ async function parseCasePDFs(files) {
   const progEl = document.getElementById('cProg');
   progEl.style.display = 'block';
 
-  for (let i=0; i<files.length; i++) {
+  // 一覧PDFと図面PDFを分けて処理し最後にマージ
+  const listFiles = [];
+  const zumenFiles = [];
+  for (const f of files) {
+    if (/図面|zmn_list|zumen/i.test(f.name)) zumenFiles.push(f);
+    else listFiles.push(f);
+  }
+
+  // Step1: 一覧PDFを先に処理（面積の精度が高い）
+  const listRows = []; // {date, price, landArea}
+  for (let i=0; i<listFiles.length; i++) {
+    const f = listFiles[i];
     document.getElementById('cProgBar').style.width = ((i/files.length)*100)+'%';
-    const f = files[i];
-    addLog('info', `${f.name}：解析開始 (${i+1}/${files.length})`);
+    addLog('info', `${f.name}：一覧PDF解析 (${i+1}/${listFiles.length})`);
     try {
       const text = await pdfToText(f);
       const hasText = text.replace(/\s/g,'').length > 80;
-
-      // 図面系ファイル（zmn_list等）→ AIで全ページ解析
-      const isZumen = /図面|zmn_list|zumen/i.test(f.name);
-      if (isZumen) {
-        if (!S.apiKey) {
-          addLog('warn', `${f.name}：図面PDFはAPIキーが必要です`);
-          renderCaseTable(); calcAvg();
-          continue;
+      if (hasText) {
+        const basicRows = parseReinsListText(text, f.name);
+        if (basicRows.length >= 2) {
+          basicRows.forEach(r => listRows.push(r));
+          addLog('ok', `${f.name}：一覧PDF ${basicRows.length}件取得`);
+        } else if (S.apiKey) {
+          const rows = await parseCaseTextWithAI(text, f.name);
+          rows.forEach(r => listRows.push(r));
+          addLog('ok', `${f.name}：AI解析 ${rows.length}件取得`);
         }
-        addLog('info', `${f.name}：図面PDF → AI解析中（全ページ）...`);
-        try {
-          const zRows = await parseZumenWithAI(f);
-          let added = 0;
-          zRows.forEach(row => {
-            if (!S.cases.find(r => r.date === row.date && r.price === row.price && Math.abs((r.landArea||0)-(row.landArea||0)) < 1)) {
-              S.cases.push({...row, id:Date.now()+Math.random(), adopted:true});
-              added++;
-            }
-          });
-          addLog('ok', `${f.name}：図面PDF AI解析 ${added}件追加`);
-        } catch(e) {
-          addLog('warn', `${f.name}：図面PDF解析エラー - ${e.message}`);
-        }
-        renderCaseTable(); calcAvg();
-        if (i < files.length - 1) await new Promise(r => setTimeout(r, 1000));
-        continue;
       }
+    } catch(e) { addLog('warn', `${f.name}：エラー - ${e.message}`); }
+  }
+
+  // Step2: 図面PDFを処理（住所の精度が高い）
+  const zumenRows = []; // {date, price, name}
+  for (let i=0; i<zumenFiles.length; i++) {
+    const f = zumenFiles[i];
+    if (!S.apiKey) { addLog('warn', `${f.name}：図面PDFはAPIキーが必要です`); continue; }
+    addLog('info', `${f.name}：図面PDF → AI解析中（全ページ）...`);
+    try {
+      const rows = await parseZumenWithAI(f);
+      rows.forEach(r => zumenRows.push(r));
+      addLog('ok', `${f.name}：図面PDF ${rows.length}件取得`);
+    } catch(e) { addLog('warn', `${f.name}：図面PDF解析エラー - ${e.message}`); }
+  }
+
+  // Step3: マージ
+  // 一覧PDFあり → 日付+価格で図面の住所を紐付け
+  // 一覧PDFなし → 図面のデータをそのまま使用
+  const mergedRows = [];
+  const seen = new Set();
+
+  if (listRows.length > 0) {
+    listRows.forEach(lr => {
+      // 日付+価格で図面行を検索（価格±1万円の誤差許容）
+      const zRow = zumenRows.find(zr =>
+        zr.date === lr.date &&
+        Math.abs(zr.price - lr.price) <= 10000
+      );
+      const name = (zRow && zRow.name && zRow.name !== '※住所要確認')
+        ? zRow.name
+        : (lr.name || '');
+      const key = `${lr.date}_${lr.price}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        mergedRows.push({...lr, name});
+      }
+    });
+    // 図面にしかない件（一覧にない）は図面のまま追加
+    zumenRows.forEach(zr => {
+      const key = `${zr.date}_${zr.price}`;
+      if (!seen.has(key) && zr.price && zr.date) {
+        seen.add(key);
+        mergedRows.push(zr);
+      }
+    });
+    addLog('ok', `一覧+図面マージ完了：${mergedRows.length}件`);
+  } else {
+    // 一覧PDFなし → 図面のみ
+    zumenRows.forEach(zr => {
+      const key = `${zr.date}_${zr.price}`;
+      if (!seen.has(key) && zr.price && zr.date) {
+        seen.add(key);
+        mergedRows.push(zr);
+      }
+    });
+  }
+
+  // S.casesに追加
+  let added = 0;
+  mergedRows.forEach(row => {
+    if (!S.cases.find(r => r.date === row.date && r.price === row.price)) {
+      const lu = row.landArea>0 ? Math.round(row.price/row.landArea) : 0;
+      S.cases.push({...row, id:Date.now()+Math.random(), adopted:true, _lu:lu, _tu:lu});
+      added++;
+    }
+  });
+  addLog('ok', `成約事例 ${added}件追加`);
+  renderCaseTable(); calcAvg();
+  geocodeCases();
+  document.getElementById('cProgBar').style.width = '100%';
+  setTimeout(()=>{ progEl.style.display='none'; }, 1000);
+
+  // 以下は図面・一覧以外のファイル（独自書式等）の処理
+  const otherFiles = files.filter(f => !/図面|zmn_list|zumen/i.test(f.name) && listFiles.indexOf(f) === -1);
+  for (let i=0; i<otherFiles.length; i++) {
+    const f = otherFiles[i];
+    addLog('info', `${f.name}：解析開始`);
+    try {
+      const text = await pdfToText(f);
+      const hasText = text.replace(/\s/g,'').length > 80;
 
       if (hasText) {
 

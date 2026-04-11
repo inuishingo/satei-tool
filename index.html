@@ -1495,7 +1495,9 @@ async function parseCasePDFs(files) {
 // 所在地から都道府県を除去して統一表記にする
 function normAddr(name) {
   if (!name) return name;
-  return name.replace(/^(北海道|東京都|(?:大阪|京都)府|.{2,3}県)\s*/, '');
+  return name
+    .replace(/^(北海道|東京都|(?:大阪|京都)府|.{2,3}県)\s*/, '') // 都道府県除去
+    .trim();
 }
 
 function safeAge(val) {
@@ -1649,7 +1651,25 @@ async function parseZumenWithAI(file) {
 
     const content = [
       ...imgs.map(b64=>({type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}})),
-      {type:'text',text:`不動産成約事例の図面PDF（${imgs.length}ページ）。1ページ=1物件。各ページから全件抽出してください。\n所在地は番地・号地まで含めて抽出（例：湖南市水戸町22-52）。「所在地」欄を優先。不動産会社住所は除外。\n成約価格・成約年月日はページ最下部の「成約価格：XX万円　成約年月日：令和X年X月X日」から取得。\nJSON配列のみ返答：[{"name":"所在地（番地まで）","date":"YYYY/MM/DD","price":円,"landArea":㎡,"buildArea":0,"age":0}]\n万円→円変換(998万→9980000)。不明は0。JSONのみ。`}
+      {type:'text',text:`不動産成約事例の図面PDF（${imgs.length}ページ）。1ページ=1物件。各ページから全件抽出。
+
+【所在地の抽出ルール（優先順）】
+1. 「カーナビ設定：XX市XX町XX-XX」の値を最優先で使う
+2. 「所在地」欄が具体的な番地なら使う（「下記参照」「右図参照」は除外）
+3. 上記がなければ「TOWN名」や区画図から市区町村＋町名を使う
+4. 不動産会社の住所（守山市・草津市等、物件と異なる市）は絶対に使わない
+5. 号地（例：18号地）は所在地に含めてOK
+
+【土地面積の抽出ルール】
+・「土地面積」「公簿」欄の㎡値、または区画図の㎡値を使う
+・不明なら0
+
+【成約情報】
+・成約価格・成約年月日はページ最下部「成約価格：XX万円　成約年月日：令和X年X月X日」から取得
+
+JSON配列のみ返答（前後の説明不要）：
+[{"name":"所在地","date":"YYYY/MM/DD","price":円整数,"landArea":㎡数値,"buildArea":0,"age":0}]
+万円→円変換(998万→9980000)。不明は0。`}
     ];
 
     const raw = await callClaude([{role:'user',content}],'不動産成約事例一括抽出。JSON配列のみ返答。');

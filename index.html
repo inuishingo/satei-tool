@@ -1492,6 +1492,12 @@ async function parseCasePDFs(files) {
 }
 
 // 築年数を安全に数値変換（"一年"・"新築"・文字列数字などに対応）
+// 所在地から都道府県を除去して統一表記にする
+function normAddr(name) {
+  if (!name) return name;
+  return name.replace(/^(北海道|東京都|(?:大阪|京都)府|.{2,3}県)\s*/, '');
+}
+
 function safeAge(val) {
   if (val === null || val === undefined || val === '') return 0;
   const s = String(val).trim();
@@ -1542,7 +1548,7 @@ ${chunk}`;
             const ba = parseFloat(d.buildArea)||0;
             const pr = parseInt(d.price)||0;
             allRows.push({
-              name: d.name || filename.replace('.pdf',''),
+              name: normAddr(d.name) || filename.replace('.pdf',''),
               date: d.date || '',
               price: pr,
               landArea: la,
@@ -1578,7 +1584,7 @@ async function parseCaseImageWithAI(file) {
     if (!jsonStr) throw new Error('no json');
     const arr = JSON.parse(jsonStr);
     return arr.map(d => ({
-      name: d.name || file.name.replace('.pdf',''),
+      name: normAddr(d.name) || file.name.replace('.pdf',''),
       date: d.date || '',
       price: parseInt(d.price)||0,
       landArea: parseFloat(d.landArea)||0,
@@ -1654,7 +1660,7 @@ async function parseZumenWithAI(file) {
       arr.forEach(d => {
         if (!d.price || !d.date) return;
         allRows.push({
-          name: d.name || '',
+          name: normAddr(d.name) || '',
           date: d.date,
           price: parseInt(d.price)||0,
           landArea: parseFloat(d.landArea)||0,
@@ -1856,7 +1862,7 @@ function parseReinsListText(text, filename) {
 
       // 所在地：正規化済みbsから都道府県+市区町村+町名を抽出
       const addrM = bs.match(/([^\d]{2,6}[都道府県][^\d]{2,10}[市区町村][^\d]{0,12})/);
-      let name = addrM ? addrM[1] : bs.match(/([^\d]{2,8}[市区町村][^\d]{0,12})/)?.[1] || filename.replace('.pdf','');
+      let name = normAddr(addrM ? addrM[1] : bs.match(/([^\d]{2,8}[市区町村][^\d]{0,12})/)?.[1] || filename.replace('.pdf',''));
 
       rows.push({
         name,

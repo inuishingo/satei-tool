@@ -1610,13 +1610,15 @@ function parseReinsListText(text, filename) {
   // → 物件番号を起点に前後テキストブロックから各値を抽出
 
   const base = {'令和':2018,'平成':1988,'昭和':1925};
-  const dateRx = /(令\s*和|平\s*成|昭\s*和)\s*(\d+)\s*年\s*(\d+)\s*月\s*(\d+)\s*日/;
 
   function parseDate(s) {
-    const m = s.match(dateRx);
+    // pdf.jsが「令 和   6 年   3 月   9 日」のように文字間にスペースを挿入するため
+    // スペースを除去してからマッチ（ただし数字間のスペースは保持が必要なので元文字列でも試みる）
+    const stripped = s.replace(/\s/g,'').replace(/　/g,'');
+    const rx = /(令和|平成|昭和)(\d{1,2})年(\d{1,2})月(\d{1,2})日/;
+    const m = stripped.match(rx);
     if (!m) return null;
-    const g = m[1].replace(/\s/g,'');
-    const yr = (base[g]||2018) + parseInt(m[2]);
+    const yr = (base[m[1]]||2018) + parseInt(m[2]);
     return `${yr}/${String(m[3]).padStart(2,'0')}/${String(m[4]).padStart(2,'0')}`;
   }
 
@@ -1640,20 +1642,21 @@ function parseReinsListText(text, filename) {
 
       // 成約年月日
       const date = parseDate(block);
-      if (i < 2) console.log(`[parseReins BLOCK${i}] date=${date} block先頭100:`, block.slice(0,100));
+      if (i < 2) console.log(`[parseReins BLOCK${i}] date=${date} blockFULL:`, JSON.stringify(block));
       if (!date) continue;
 
+      // スペース除去済みブロック（価格・面積抽出用）
+      const bs = block.replace(/[\s　]/g,'');
+
       // 成約価格：整数万円で100以上（坪単価・㎡単価の小数を除外）
-      // 「998万円」「1,027万円」を拾う。「3.2万円」「10.4万円」は除外
-      const priceRx = /(?<!\.\d{0,3})\b(\d[\d,]+)\s*万\s*円/g;
+      const priceRx = /(\d[\d,]+)万円/g;
       let price = 0;
       let pm2;
-      while ((pm2 = priceRx.exec(block)) !== null) {
+      while ((pm2 = priceRx.exec(bs)) !== null) {
         const raw = pm2[1].replace(/,/g,'');
-        // 小数点なし・100以上
-        if (!pm2[1].includes('.') && parseInt(raw) >= 100) {
+        if (!raw.includes('.') && parseInt(raw) >= 100) {
           price = Math.round(parseInt(raw) * 10000);
-          break; // 最初に見つかった成約価格を採用
+          break;
         }
       }
       if (!price) continue;
@@ -1662,7 +1665,7 @@ function parseReinsListText(text, filename) {
       const areaRx = /(\d{2,4}\.\d{1,2})/g;
       let landArea = 0;
       let am2;
-      while ((am2 = areaRx.exec(block)) !== null) {
+      while ((am2 = areaRx.exec(bs)) !== null) {
         const v = parseFloat(am2[1]);
         if (v >= 50 && v <= 2000) { landArea = v; break; }
       }

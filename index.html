@@ -2506,11 +2506,12 @@ const SUBJECT = { name:'【対象物件】', lat:35.1266654, lng:136.9298696, pr
 // 住所からジオコーディング（Nominatim）してSUBJECT座標を更新
 async function geocodeSubject(address) {
   if (!address) return;
-  // 国土地理院ジオコーダーAPI（CORSフリー・日本住所専用）
+  const normalized = address.replace(/(\d+)-(\d+)/, '$1番$2');
   const queries = [
+    normalized,
     address,
-    address.replace(/[0-9０-９]+番地?[0-9０-９]*/, '').trim(),
-    (address.match(/(.+?[市区町村])/)?.[1] || address),
+    address.replace(/[0-9０-９\-－]+番地?[0-9０-９\-－]*/, '').trim(),
+    (address.match(/(.+?[市区町村].+?[町丁])/)?.[1] || address.match(/(.+?[市区町村])/)?.[1] || address),
   ];
   for (const q of queries) {
     try {
@@ -2537,16 +2538,19 @@ async function geocodeSubject(address) {
 
 // 成約事例の住所から座標を取得してS.casesに反映
 async function geocodeCases() {
-  const targets = S.cases.filter(c => !c.lat && c.name && c.name.length > 3);
+  const targets = S.cases.filter(c => !c.lat && c.name && c.name.length > 3 && c.name !== '※住所要確認');
   if (!targets.length) return;
   addLog('ok', `📍 近隣事例 ${targets.length}件の座標を取得中...`);
   let success = 0;
   for (const c of targets) {
     await new Promise(r => setTimeout(r, 300));
+    // ハイフン番地を「番」「号」に変換（国土地理院API対応）
+    const normalized = c.name.replace(/(\d+)-(\d+)/, '$1番$2');
     const queries = [
+      normalized,
       c.name,
-      c.name.replace(/[0-9０-９]+番地?[0-9０-９]*/,'').trim(),
-      (c.name.match(/(.+?[市区町村])/)?.[1] || c.name),
+      c.name.replace(/[0-9０-９\-－]+番地?[0-9０-９\-－]*/,'').trim(),
+      (c.name.match(/(.+?[市区町村].+?[町丁])/)?.[1] || c.name.match(/(.+?[市区町村])/)?.[1] || c.name),
     ];
     for (const q of queries) {
       try {

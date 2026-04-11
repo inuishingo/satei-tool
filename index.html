@@ -1448,12 +1448,20 @@ async function parseCasePDFs(files) {
         ? zRow.name
         : (lr.name || '');
 
-      // 同日付・同価格が一覧に複数ある場合：図面の面積に近い方を優先
-      // keyを面積も含めて一意化
+      // 同日付・同価格が一覧に複数ある場合：図面の面積に最も近い1件のみ採用
+      const samePriceDate = listRows.filter(r =>
+        r.date === lr.date && Math.abs(r.price - lr.price) <= 10000
+      );
+      if (samePriceDate.length > 1 && zRow && zRow.landArea > 0) {
+        const closest = samePriceDate.reduce((a, b) =>
+          Math.abs(a.landArea - zRow.landArea) <= Math.abs(b.landArea - zRow.landArea) ? a : b
+        );
+        if (closest !== lr) return; // 他の行の方が図面に近ければスキップ
+      }
+
       const key = `${lr.date}_${lr.price}_${lr.landArea}`;
       if (!seen.has(key)) {
         seen.add(key);
-        // seenには日付+価格のみのキーも追加（図面との重複排除用）
         seen.add(`${lr.date}_${lr.price}`);
         mergedRows.push({...lr, name});
       }
@@ -1760,9 +1768,11 @@ async function parseZumenWithAI(file) {
 【土地面積】
 ・成約した号地1区画の㎡面積のみ（絶対に複数区画の面積を合算しない）
 ・単位は必ず㎡（平方メートル）。坪数は使わない（318.03㎡と96.2坪が並んでいたら318.03を使う）
-・ページ最下部「成約価格：XX万円　成約年月日：XX」の価格と一致する号地の㎡面積を使う
+・ページ最下部「成約価格：XX万円　成約年月日：XX」の価格に対応する号地の㎡面積を使う
 ・複数号地の一覧表がある場合：㎡欄の数値のみ参照。坪欄・坪単価欄の数値は絶対に使わない
-・面積が特定できない・㎡値が不明な場合は0にする（複数候補があるときは合算せず0にする）
+・「済」「商談中」「売却済」「建売」と表示されている号地の面積は使わない（成約済みの別物件）
+・成約価格と号地の土地価格が一致するか近い号地の面積を選ぶ
+・面積が特定できない場合は0にする（複数候補があるときは合算せず0にする）
 【成約情報】ページ最下部「成約価格：XX万円　成約年月日：令和X年X月X日」から取得。
 
 JSONのみ返答（1件）：
@@ -2073,13 +2083,14 @@ function renderCaseTable() {
     tr.dataset.id = row.id;
     if (!row.adopted) tr.classList.add('excl');
     const needsAddrCheck = row.name === '※住所要確認';
-    if (needsAddrCheck) tr.style.outline = '1px solid #f59e0b';
+    const needsAreaCheck = !row.landArea || row.landArea === 0;
+    if (needsAddrCheck || needsAreaCheck) tr.style.outline = '1px solid #f59e0b';
     tr.innerHTML = `
       <td><div class="cb-wrap"><input type="checkbox" ${row.adopted?'checked':''} onchange="toggleAdopt(${row.id},this.checked)"></div></td>
       <td><input type="text" class="left" style="background:none;border:none;color:${needsAddrCheck?'#f59e0b':'var(--text2)'};font-size:12px;width:160px;padding:0;" value="${esc(row.name)}" onchange="updRow(${row.id},'name',this.value)" ${needsAddrCheck?'title="住所を手入力してください"':''}></td>
       <td style="text-align:center;"><input type="text" style="background:none;border:none;color:var(--text);font-size:12px;text-align:center;width:88px;" value="${esc(row.date)}" onchange="updRow(${row.id},'date',this.value)"></td>
       <td>${row.price?fmt(row.price)+'円':'−'}</td>
-      <td>${row.landArea||'−'}㎡</td>
+      <td>${row.landArea?row.landArea+'㎡':`<span style="color:#f59e0b;font-size:11px;cursor:pointer;" title="クリックして手入力" onclick="promptArea(${row.id})">図面参照▶手入力</span>`}</td>
       <td>${row.buildArea||'−'}㎡</td>
       <td>${fmtAge(row.age)}</td>
       <td>${lu?fmt(lu)+'円<div class="sub2">/㎡</div>':'−'}</td>
@@ -2102,6 +2113,14 @@ function toggleAdopt(id,v) {
 }
 function updRow(id,f,v){const r=S.cases.find(r=>r.id===id);if(r)r[f]=v;}
 function delRow(id){S.cases=S.cases.filter(r=>r.id!==id);renderCaseTable();calcAvg();}
+function promptArea(id){
+  const r=S.cases.find(r=>r.id===id);
+  if(!r) return;
+  const v=prompt(`土地面積を入力（㎡）\n${r.name} / ${r.date} / ${(r.price/10000).toLocaleString()}万円`,'');
+  if(v===null) return;
+  const n=parseFloat(v);
+  if(!isNaN(n)&&n>0){r.landArea=n;renderCaseTable();calcAvg();}
+}
 function checkAll(v){S.cases.forEach(r=>r.adopted=v);renderCaseTable();calcAvg();}
 function addManual(){
   S.cases.push({id:Date.now()+Math.random(),name:'手入力事例',date:'',price:0,landArea:0,buildArea:0,age:0,adopted:true,_lu:0,_tu:0});

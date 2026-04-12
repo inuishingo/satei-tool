@@ -1766,10 +1766,13 @@ async function parseZumenWithAI(file) {
 所在地が不明・自信なしはnameを空文字""にする。
 
 【成約情報】各ページ最下部「成約価格：XX万円　成約年月日：令和X年X月X日」から取得。
-※土地面積は別途一覧PDFから取得するためlandAreaは常に0でよい。
+
+【土地面積】「土地面積」「公簿」欄の㎡数値を取得。坪表記のみの場合は×3.305で換算。不明は0。
+【建物面積】「延べ床面積」「建物面積」欄の合計㎡。不明は0。
+【築年数】「築年月」「築年数」から西暦換算して2026年との差。不明は0。
 
 JSON配列のみ返答（ページ数分の配列）：
-[{"name":"所在地","date":"YYYY/MM/DD","price":円整数,"landArea":0,"buildArea":延べ床面積㎡,"age":築年数}]
+[{name:所在地,date:YYYY/MM/DD,price:円整数,landArea:土地面積㎡,buildArea:延べ床面積㎡,age:築年数}]
 万円→円変換(798万→7980000)。JSONのみ。`});
 
     try {
@@ -1780,15 +1783,18 @@ JSON配列のみ返答（ページ数分の配列）：
         arr.forEach(d => {
           if (d.price && d.date) {
             const addr = normAddr(d.name) || '';
+            const la = parseFloat(d.landArea)||0;
+            const ba = parseFloat(d.buildArea)||0;
+            const pr = parseInt(d.price)||0;
             allRows.push({
               name: addr || '※住所要確認',
               date: d.date,
-              price: parseInt(d.price)||0,
-              landArea: parseFloat(d.landArea)||0,
-              buildArea: parseFloat(d.buildArea)||0,
+              price: pr,
+              landArea: la,
+              buildArea: ba,
               age: safeAge(d.age),
-              _lu: 0,
-              _tu: 0,
+              _lu: la>0 ? Math.round(pr/la) : 0,
+              _tu: (la+ba)>0 ? Math.round(pr/(la+ba)) : 0,
             });
           }
         });

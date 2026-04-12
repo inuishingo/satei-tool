@@ -1492,6 +1492,7 @@ async function parseCasePDFs(files) {
 
   // 以下は図面・一覧以外のファイル（独自書式等）の処理
   const otherFiles = files.filter(f => !/図面|zmn_list|zumen/i.test(f.name) && listFiles.indexOf(f) === -1);
+  console.log(`[parseCasePDFs] otherFiles: ${otherFiles.length}件`, otherFiles.map(f=>f.name));
   for (let i=0; i<otherFiles.length; i++) {
     const f = otherFiles[i];
     addLog('info', `${f.name}：解析開始`);

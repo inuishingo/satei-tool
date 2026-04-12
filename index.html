@@ -1451,38 +1451,28 @@ async function parseCasePDFs(files) {
   const priceMatch = (a, b) => a.date === b.date && Math.abs(a.price - b.price) <= Math.max(a.price, b.price) * 0.05;
 
   // Step3: マージ
-  // ケースA: 一覧PDF今回あり → listRows × zumenRows でマージしてS.casesに追加
-  // ケースB: 図面のみ投入   → 既存S.casesにマッチングしてhasFumen付与・補完
-  // ケースC: 図面のみ・S.casesも空 → 図面データをそのまま追加
   const mergedRows = [];
   const seen = new Set();
 
   if (listRows.length > 0) {
-    // ケースA
+    // ケースA：一覧PDF今回あり
     listRows.forEach(lr => {
       const zRow = zumenRows.find(zr => priceMatch(zr, lr)) || null;
-      const name = (zRow && zRow.name && zRow.name !== '※住所要確認')
-        ? zRow.name : (lr.name || '');
+      const name = (zRow && zRow.name && zRow.name !== '※住所要確認') ? zRow.name : (lr.name || '');
       const hasFumen = !!(zRow && zRow.name && zRow.name !== '※住所要確認');
       const buildArea = lr.buildArea || (zRow ? zRow.buildArea : 0) || 0;
       const age = lr.age || (zRow ? zRow.age : 0) || 0;
       const key = `${lr.date}_${lr.price}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        mergedRows.push({...lr, name, hasFumen, buildArea, age});
-      }
+      if (!seen.has(key)) { seen.add(key); mergedRows.push({...lr, name, hasFumen, buildArea, age}); }
     });
     zumenRows.forEach(zr => {
       const key = `${zr.date}_${zr.price}`;
-      if (!seen.has(key) && zr.price && zr.date) {
-        seen.add(key);
-        mergedRows.push({...zr, hasFumen: true});
-      }
+      if (!seen.has(key) && zr.price && zr.date) { seen.add(key); mergedRows.push({...zr, hasFumen: true}); }
     });
     addLog('ok', `一覧+図面マージ完了：${mergedRows.length}件`);
 
   } else if (zumenRows.length > 0 && S.cases.length > 0) {
-    // ケースB: 図面のみ → 既存S.casesを直接更新
+    // ケースB：図面のみ → 既存S.casesを直接更新
     let matched = 0;
     zumenRows.forEach(zr => {
       const existing = S.cases.find(r => priceMatch(r, zr));
@@ -1492,24 +1482,19 @@ async function parseCasePDFs(files) {
         if (!existing.buildArea && zr.buildArea) existing.buildArea = zr.buildArea;
         if (!existing.age && zr.age) existing.age = zr.age;
         matched++;
-      } else {
-        mergedRows.push({...zr, hasFumen: true});
-      }
+      } else { mergedRows.push({...zr, hasFumen: true}); }
     });
     addLog('ok', `図面マッチング：${matched}件に「図」バッジ付与`);
 
   } else {
-    // ケースC: 図面のみ・S.casesも空
+    // ケースC：図面のみ・S.casesも空
     zumenRows.forEach(zr => {
       const key = `${zr.date}_${zr.price}`;
-      if (!seen.has(key) && zr.price && zr.date) {
-        seen.add(key);
-        mergedRows.push({...zr, hasFumen: true});
-      }
+      if (!seen.has(key) && zr.price && zr.date) { seen.add(key); mergedRows.push({...zr, hasFumen: true}); }
     });
   }
 
-  // S.casesに新規追加分を追記（日付+価格5%以内で重複チェック）
+  // 新規追加分をS.casesへ
   let added = 0;
   mergedRows.forEach(row => {
     if (!S.cases.find(r => priceMatch(r, row))) {
@@ -2657,33 +2642,42 @@ const ALL_CASES = [
 const SUBJECT = { name:'【対象物件】', lat:35.1266654, lng:136.9298696, price:'' };
 
 // 住所からジオコーディング（Nominatim）してSUBJECT座標を更新
-async function geocodeSubject(address) {
-  if (!address) return;
-  const normalized = address.replace(/(\d+)-(\d+)/, '$1番$2');
+// Google Geocoding APIで住所→座標変換（共通関数）
+async function geocodeAddress(address) {
+  if (!address || !GOOGLE_MAPS_KEY) return null;
   const queries = [
-    normalized,
     address,
+    address.replace(/(\d+)-(\d+)/, '$1番$2'),
     address.replace(/[0-9０-９\-－]+番地?[0-9０-９\-－]*/, '').trim(),
     (address.match(/(.+?[市区町村].+?[町丁])/)?.[1] || address.match(/(.+?[市区町村])/)?.[1] || address),
   ];
   for (const q of queries) {
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=3&countrycodes=jp&accept-language=ja`
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(q)}&key=${GOOGLE_MAPS_KEY}&language=ja&region=jp`
       );
       const data = await res.json();
-      if (data && data.length > 0) {
-        const best = data.reduce((a,b) => parseFloat(a.importance||0) > parseFloat(b.importance||0) ? a : b);
-        SUBJECT.lat = parseFloat(best.lat);
-        SUBJECT.lng = parseFloat(best.lon);
-        SUBJECT.name = '【対象】' + address;
-        addLog('ok', `ジオコーディング完了 [${q}] → (${SUBJECT.lat.toFixed(5)}, ${SUBJECT.lng.toFixed(5)})`);
-        if (document.getElementById('tab3')?.classList.contains('active')) {
-          initLeafletMap();
-        }
-        return true;
+      if (data.status === 'OK' && data.results.length > 0) {
+        const loc = data.results[0].geometry.location;
+        return { lat: loc.lat, lng: loc.lng };
       }
     } catch(e) { /* 次のクエリへ */ }
+  }
+  return null;
+}
+
+async function geocodeSubject(address) {
+  if (!address) return;
+  const result = await geocodeAddress(address);
+  if (result) {
+    SUBJECT.lat = result.lat;
+    SUBJECT.lng = result.lng;
+    SUBJECT.name = '【対象】' + address;
+    addLog('ok', `ジオコーディング完了 → (${result.lat.toFixed(5)}, ${result.lng.toFixed(5)})`);
+    if (document.getElementById('tab3')?.classList.contains('active')) {
+      initLeafletMap();
+    }
+    return true;
   }
   addLog('warn', '住所の座標取得に失敗しました（地図タブで手動確認してください）');
   return false;
@@ -2696,35 +2690,16 @@ async function geocodeCases() {
   addLog('ok', `📍 近隣事例 ${targets.length}件の座標を取得中...`);
   let success = 0;
   for (const c of targets) {
-    await new Promise(r => setTimeout(r, 1100));
-    // ハイフン番地を「番」「号」に変換（国土地理院API対応）
-    const normalized = c.name.replace(/(\d+)-(\d+)/, '$1番$2');
-    const queries = [
-      normalized,
-      c.name,
-      c.name.replace(/[0-9０-９\-－]+番地?[0-9０-９\-－]*/,'').trim(),
-      (c.name.match(/(.+?[市区町村].+?[町丁])/)?.[1] || c.name.match(/(.+?[市区町村])/)?.[1] || c.name),
-    ];
-    for (const q of queries) {
-      try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=3&countrycodes=jp&accept-language=ja`
-        );
-        const data = await res.json();
-        if (data && data.length > 0) {
-          const best = data.reduce((a,b) => parseFloat(a.importance||0) > parseFloat(b.importance||0) ? a : b);
-          // 同一住所で座標が重なる場合に備えてランダムオフセット（約±50m）
-          const offset = () => (Math.random() - 0.5) * 0.001;
-          c.lat = parseFloat(best.lat) + offset();
-          c.lng = parseFloat(best.lon) + offset();
-          success++;
-          break;
-        }
-      } catch(e) { /* 次のクエリへ */ }
+    await new Promise(r => setTimeout(r, 200));
+    const result = await geocodeAddress(c.name);
+    if (result) {
+      const offset = () => (Math.random() - 0.5) * 0.001;
+      c.lat = result.lat + offset();
+      c.lng = result.lng + offset();
+      success++;
     }
   }
   addLog('ok', `📍 座標取得完了（${success}/${targets.length}件）`);
-  // 地図タブが開いていれば再描画
   if (document.getElementById('tab3')?.classList.contains('active')) {
     initLeafletMap();
     renderMapCaseTable();

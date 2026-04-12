@@ -1448,32 +1448,29 @@ async function parseCasePDFs(files) {
   }
 
   // Step3: マージ
-  // 一覧PDFあり → 日付+価格で図面の住所を紐付け
-  // 一覧PDFなし → 図面のデータをそのまま使用
+  // 【ケースA】一覧PDF今回あり → listRows × zumenRows でマージしてS.casesに追加
+  // 【ケースB】一覧PDFなし・図面のみ → 既存S.casesにマッチングしてhasFumen付与、未マッチは新規追加
   const mergedRows = [];
   const seen = new Set();
 
   if (listRows.length > 0) {
+    // ケースA：一覧PDF今回読込あり
     listRows.forEach(lr => {
-      // 日付+価格で図面行を検索（価格±1万円の誤差許容）
       const matchedZRows = zumenRows.filter(zr =>
         zr.date === lr.date &&
         Math.abs(zr.price - lr.price) <= 10000
       );
       const zRow = matchedZRows.length > 0 ? matchedZRows[0] : null;
       const name = (zRow && zRow.name && zRow.name !== '※住所要確認')
-        ? zRow.name
-        : (lr.name || '');
+        ? zRow.name : (lr.name || '');
       const hasFumen = !!(zRow && zRow.name && zRow.name !== '※住所要確認');
-
-      // 一覧PDFの面積が正とするため、日付+価格+面積で一意化して全件登録
       const key = `${lr.date}_${lr.price}_${lr.landArea}`;
       if (!seen.has(key)) {
         seen.add(key);
         mergedRows.push({...lr, name, hasFumen});
       }
     });
-    // 図面にしかない件（一覧にない）は図面のまま追加
+    // 図面にしかない件は図面のまま追加
     zumenRows.forEach(zr => {
       const key = `${zr.date}_${zr.price}`;
       if (!seen.has(key) && zr.price && zr.date) {
@@ -1482,18 +1479,43 @@ async function parseCasePDFs(files) {
       }
     });
     addLog('ok', `一覧+図面マージ完了：${mergedRows.length}件`);
+  } else if (zumenRows.length > 0 && S.cases.length > 0) {
+    // ケースB：図面のみ投入 → 既存S.casesにhasFumenを付与
+    let matched = 0;
+    zumenRows.forEach(zr => {
+      // 既存S.casesと日付+価格でマッチング
+      const existing = S.cases.find(r =>
+        r.date === zr.date &&
+        Math.abs(r.price - zr.price) <= 10000
+      );
+      if (existing) {
+        // 住所を図面で上書き・hasFumen付与
+        if (zr.name && zr.name !== '※住所要確認') {
+          existing.name = zr.name;
+        }
+        existing.hasFumen = true;
+        // 建物面積・築年数も図面で補完（未入力の場合）
+        if (!existing.buildArea && zr.buildArea) existing.buildArea = zr.buildArea;
+        if (!existing.age && zr.age) existing.age = zr.age;
+        matched++;
+      } else {
+        // 既存にない件は新規追加
+        mergedRows.push({...zr, hasFumen: true});
+      }
+    });
+    addLog('ok', `図面マッチング完了：${matched}件に「図」バッジ付与`);
   } else {
-    // 一覧PDFなし → 図面のみ
+    // 図面のみ・S.casesも空
     zumenRows.forEach(zr => {
       const key = `${zr.date}_${zr.price}`;
       if (!seen.has(key) && zr.price && zr.date) {
         seen.add(key);
-        mergedRows.push(zr);
+        mergedRows.push({...zr, hasFumen: true});
       }
     });
   }
 
-  // S.casesに追加
+  // S.casesに新規追加分を追記
   let added = 0;
   mergedRows.forEach(row => {
     if (!S.cases.find(r => r.date === row.date && r.price === row.price && r.landArea === row.landArea)) {
@@ -1502,7 +1524,7 @@ async function parseCasePDFs(files) {
       added++;
     }
   });
-  addLog('ok', `成約事例 ${added}件追加`);
+  if (added > 0) addLog('ok', `成約事例 ${added}件追加`);
   renderCaseTable(); calcAvg();
   geocodeCases();
   document.getElementById('cProgBar').style.width = '100%';
@@ -2649,7 +2671,8 @@ async function geocodeSubject(address) {
   for (const q of queries) {
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=3&countrycodes=jp&accept-language=ja`
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=3&countrycodes=jp&accept-language=ja`,
+        { headers: { 'User-Agent': 'HOUSE-MARKET-SateiTool/1.0' } }
       );
       const data = await res.json();
       if (data && data.length > 0) {
@@ -2688,7 +2711,8 @@ async function geocodeCases() {
     for (const q of queries) {
       try {
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=3&countrycodes=jp&accept-language=ja`
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=3&countrycodes=jp&accept-language=ja`,
+          { headers: { 'User-Agent': 'HOUSE-MARKET-SateiTool/1.0' } }
         );
         const data = await res.json();
         if (data && data.length > 0) {

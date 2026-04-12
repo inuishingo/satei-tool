@@ -1447,8 +1447,8 @@ async function parseCasePDFs(files) {
     } catch(e) { addLog('warn', `${f.name}：図面PDF解析エラー - ${e.message}`); }
   }
 
-  // 価格マッチング：日付一致 かつ 価格が±5%以内
-  const priceMatch = (a, b) => a.date === b.date && Math.abs(a.price - b.price) <= Math.max(a.price, b.price) * 0.05;
+  // 価格マッチング：日付一致 かつ 価格が±10%以内
+  const priceMatch = (a, b) => a.date === b.date && Math.abs(a.price - b.price) <= Math.max(a.price, b.price) * 0.10;
 
   // Step3: マージ
   const mergedRows = [];
@@ -2674,12 +2674,10 @@ async function geocodeSubject(address) {
     SUBJECT.lng = result.lng;
     SUBJECT.name = '【対象】' + address;
     addLog('ok', `ジオコーディング完了 → (${result.lat.toFixed(5)}, ${result.lng.toFixed(5)})`);
-    if (document.getElementById('tab3')?.classList.contains('active')) {
-      initLeafletMap();
-    }
+    if (document.getElementById('tab3')?.classList.contains('active')) initLeafletMap();
     return true;
   }
-  addLog('warn', '住所の座標取得に失敗しました（地図タブで手動確認してください）');
+  addLog('warn', '住所の座標取得に失敗しました');
   return false;
 }
 

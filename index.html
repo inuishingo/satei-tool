@@ -1464,12 +1464,13 @@ async function parseCasePDFs(files) {
       const name = (zRow && zRow.name && zRow.name !== '※住所要確認')
         ? zRow.name
         : (lr.name || '');
+      const hasFumen = !!(zRow && zRow.name && zRow.name !== '※住所要確認');
 
       // 一覧PDFの面積が正とするため、日付+価格+面積で一意化して全件登録
       const key = `${lr.date}_${lr.price}_${lr.landArea}`;
       if (!seen.has(key)) {
         seen.add(key);
-        mergedRows.push({...lr, name});
+        mergedRows.push({...lr, name, hasFumen});
       }
     });
     // 図面にしかない件（一覧にない）は図面のまま追加
@@ -1477,7 +1478,7 @@ async function parseCasePDFs(files) {
       const key = `${zr.date}_${zr.price}`;
       if (!seen.has(key) && zr.price && zr.date) {
         seen.add(key);
-        mergedRows.push(zr);
+        mergedRows.push({...zr, hasFumen: true});
       }
     });
     addLog('ok', `一覧+図面マージ完了：${mergedRows.length}件`);
@@ -2086,7 +2087,10 @@ function renderCaseTable() {
     if (needsAddrCheck || needsAreaCheck) tr.style.outline = '1px solid #f59e0b';
     tr.innerHTML = `
       <td><div class="cb-wrap"><input type="checkbox" ${row.adopted?'checked':''} onchange="toggleAdopt(${row.id},this.checked)"></div></td>
-      <td><input type="text" class="left" style="background:none;border:none;color:${needsAddrCheck?'#f59e0b':'var(--text2)'};font-size:12px;width:160px;padding:0;" value="${esc(row.name)}" onchange="updRow(${row.id},'name',this.value)" ${needsAddrCheck?'title="住所を手入力してください"':''}></td>
+      <td>
+        <input type="text" class="left" style="background:none;border:none;color:${needsAddrCheck?'#f59e0b':'var(--text2)'};font-size:12px;width:160px;padding:0;" value="${esc(row.name)}" onchange="updRow(${row.id},'name',this.value)" ${needsAddrCheck?'title="住所を手入力してください"':''}>
+        ${row.hasFumen ? '<div style="display:inline-block;margin-top:2px;background:#16a34a;color:#fff;font-size:10px;font-weight:bold;padding:1px 5px;border-radius:3px;letter-spacing:0.05em;">図</div>' : ''}
+      </td>
       <td style="text-align:center;"><input type="text" style="background:none;border:none;color:var(--text);font-size:12px;text-align:center;width:88px;" value="${esc(row.date)}" onchange="updRow(${row.id},'date',this.value)"></td>
       <td onclick="promptArea(${row.id},'price')" style="cursor:pointer;" title="クリックして修正">${row.price?`<span style="border-bottom:1px dashed var(--text2);">${fmt(row.price)}円</span>`:'−'}</td>
       <td onclick="promptArea(${row.id},'land')" style="cursor:pointer;" title="クリックして修正">${row.landArea?`<span style="border-bottom:1px dashed var(--text2);">${row.landArea}㎡</span>`:`<span style="color:#f59e0b;font-size:11px;">図面参照▶手入力</span>`}</td>

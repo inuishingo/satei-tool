@@ -1399,10 +1399,9 @@ async function parseCasePDFs(files) {
         // REINS一覧の特徴：物件番号（12桁以上）や「成約年月日」が複数回登場
         const isListPdf = (preText.match(/\d{12,15}/g)||[]).length >= 3
           || (preText.match(/成約年月日/g)||[]).length >= 2
-          || /売買物件検索|No\.\s*
-/.test(preText);
+          || preText.includes('売買物件検索');
         if (isListPdf) {
-          listFiles.push({...f, _preText: preText});
+          listFiles.push(f);
         } else {
           listFiles.push(f);
         }

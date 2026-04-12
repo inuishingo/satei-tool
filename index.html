@@ -336,6 +336,10 @@ tfoot .avg-row td{background:rgba(232,184,75,.07);font-weight:700;color:var(--ac
   <input type="password" id="apiKey" placeholder="sk-ant-api03-..." oninput="saveKey()">
   <span id="apiStatus" style="color:var(--text2);font-size:11px;">未設定（手入力でも査定可能）</span>
   <span style="color:var(--border)">|</span>
+  <label>🗺️ Google Maps Key</label>
+  <input type="password" id="gmapsKey" placeholder="AIzaSy..." oninput="saveGMapsKey()" style="width:220px;">
+  <span id="gmapsStatus" style="color:var(--text2);font-size:11px;">未設定</span>
+  <span style="color:var(--border)">|</span>
   <span style="color:var(--text2);font-size:11px;">設定するとスキャンPDFも自動解析</span>
 </div>
 
@@ -756,7 +760,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
 const BUILT_IN_KEY = "";
-const GOOGLE_MAPS_KEY = "AIzaSyDo-49d-E7XJf2F5EWbK6ovwz6K-ZvKYno";
+let GOOGLE_MAPS_KEY = localStorage.getItem('hm_gmapskey') || '';
 
 const S = {
   apiKey: localStorage.getItem("hm_apikey") || BUILT_IN_KEY,
@@ -886,6 +890,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const apiKeyEl = document.getElementById('apiKey');
     if (apiKeyEl) apiKeyEl.value = savedKey;
   }
+  // Google Maps APIキーを復元
+  const savedGMapsKey = localStorage.getItem('hm_gmapskey');
+  if (savedGMapsKey) {
+    GOOGLE_MAPS_KEY = savedGMapsKey;
+    const gmapsEl = document.getElementById('gmapsKey');
+    if (gmapsEl) gmapsEl.value = savedGMapsKey;
+  }
+  updateGMapsStatus();
   const apiBar = document.getElementById('apiBar');
   if (apiBar) apiBar.style.display = 'flex';
   updateApiStatus();
@@ -898,6 +910,24 @@ function saveKey() {
   S.apiKey = document.getElementById('apiKey').value.trim();
   localStorage.setItem('hm_apikey', S.apiKey);
   updateApiStatus();
+}
+
+// Google Maps APIキー
+function saveGMapsKey() {
+  GOOGLE_MAPS_KEY = document.getElementById('gmapsKey').value.trim();
+  localStorage.setItem('hm_gmapskey', GOOGLE_MAPS_KEY);
+  updateGMapsStatus();
+}
+function updateGMapsStatus() {
+  const el = document.getElementById('gmapsStatus');
+  if (!el) return;
+  if (GOOGLE_MAPS_KEY && GOOGLE_MAPS_KEY.startsWith('AIza') && GOOGLE_MAPS_KEY.length > 20) {
+    el.textContent = '✅ 設定済 - 地図ピン有効';
+    el.style.color = 'var(--green)';
+  } else {
+    el.textContent = '未設定（地図ピン無効）';
+    el.style.color = 'var(--text2)';
+  }
 }
 function updateApiStatus() {
   const el = document.getElementById('apiStatus');
@@ -1451,7 +1481,6 @@ async function parseCasePDFs(files) {
   // 価格マッチング：日付一致 かつ 価格が±10%以内
   const priceMatch = (a, b) => a.date === b.date && Math.abs(a.price - b.price) <= Math.max(a.price, b.price) * 0.10;
 
-  // Step3: マージ
   const mergedRows = [];
   const seen = new Set();
 
@@ -2691,7 +2720,6 @@ async function geocodeSubject(address) {
   return false;
 }
 
-// 成約事例の住所から座標を取得してS.casesに反映
 async function geocodeCases() {
   const targets = S.cases.filter(c => !c.lat && c.name && c.name.length > 3 && c.name !== '※住所要確認');
   if (!targets.length) return;

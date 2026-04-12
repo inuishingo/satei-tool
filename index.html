@@ -756,7 +756,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
 const BUILT_IN_KEY = "";
-const GOOGLE_MAPS_KEY = "AIzaSyCZ-FYVmJ3moOkh6ZWxXBa4OADMvPEFE7c";
+const GOOGLE_MAPS_KEY = "AIzaSyDo-49d-E7XJf2F5EWbK6ovwz6K-ZvKYno";
 
 const S = {
   apiKey: localStorage.getItem("hm_apikey") || BUILT_IN_KEY,
@@ -1470,7 +1470,6 @@ async function parseCasePDFs(files) {
       if (!seen.has(key) && zr.price && zr.date) { seen.add(key); mergedRows.push({...zr, hasFumen: true}); }
     });
     addLog('ok', `一覧+図面マージ完了：${mergedRows.length}件`);
-
   } else if (zumenRows.length > 0 && S.cases.length > 0) {
     let matched = 0;
     zumenRows.forEach(zr => {
@@ -1484,7 +1483,6 @@ async function parseCasePDFs(files) {
       } else { mergedRows.push({...zr, hasFumen: true}); }
     });
     addLog('ok', `図面マッチング：${matched}件に「図」バッジ付与`);
-
   } else {
     zumenRows.forEach(zr => {
       const key = `${zr.date}_${zr.price}`;
@@ -1990,7 +1988,7 @@ function parseReinsListText(text, filename) {
       const landArea = allAreas[0] || 0;
       const buildArea = allAreas.length > 1 ? allAreas[1] : 0;
 
-      // 築年月：元号+年 → 築年数換算（成約年と異なるもの）
+      // 築年月：元号+年 → 築年数換算
       let age = 0;
       const nengoMap2 = {'令和':2018,'平成':1988,'昭和':1925};
       const ageMatches = bs.match(/(令和|平成|昭和)(\d{1,2})年/g);
@@ -2009,7 +2007,6 @@ function parseReinsListText(text, filename) {
       if (seen.has(key)) continue;
       seen.add(key);
 
-      // 所在地抽出
       const addrM = bs.match(/([^\d]{2,6}[都道府県][^\d]{2,10}[市区町村][^\d]{0,12})/);
       let name = normAddr(addrM ? addrM[1] : bs.match(/([^\d]{2,8}[市区町村][^\d]{0,12})/)?.[1] || filename.replace('.pdf',''));
       name = name.replace(/(専任|売主|一般|専属|仲介).*/g, '').trim();
@@ -2086,7 +2083,7 @@ function renderCaseTable() {
   }
 
   tbody.innerHTML = '';
-  let pinNo = 0; // 地図ピン番号カウンター
+  let pinNo = 0;
   rows.forEach(row => {
     const lu = row.landArea>0 ? Math.round(row.price/row.landArea) : 0;
     const tu = (row.landArea+row.buildArea)>0 ? Math.round(row.price/(row.landArea+row.buildArea)) : 0;
@@ -2097,14 +2094,11 @@ function renderCaseTable() {
     const needsAddrCheck = row.name === '※住所要確認';
     const needsAreaCheck = !row.landArea || row.landArea === 0;
     if (needsAddrCheck || needsAreaCheck) tr.style.outline = '1px solid #f59e0b';
-
-    // 地図に表示される行（採用済み＋座標あり）のみ番号付与
     const hasPin = row.adopted && row.lat && row.lng;
     if (hasPin) pinNo++;
     const noCell = hasPin
       ? `<td style="text-align:center;font-size:11px;font-weight:bold;color:#a78bfa;">${pinNo}</td>`
       : `<td></td>`;
-
     tr.innerHTML = `
       <td><div class="cb-wrap"><input type="checkbox" ${row.adopted?'checked':''} onchange="toggleAdopt(${row.id},this.checked)"></div></td>
       ${noCell}
@@ -2714,7 +2708,6 @@ async function geocodeCases() {
     }
   }
   addLog('ok', `📍 座標取得完了（${success}/${targets.length}件）`);
-  // ジオコーディング完了後にリスト番号を更新
   renderCaseTable();
   if (document.getElementById('tab3')?.classList.contains('active')) {
     initLeafletMap(); renderMapCaseTable();

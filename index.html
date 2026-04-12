@@ -1448,13 +1448,14 @@ async function parseCasePDFs(files) {
   }
 
   // Step3: マージ
-  // 一覧PDFあり → 日付+価格で図面の住所を紐付け
-  // 一覧PDFなし → 図面のデータをそのまま使用
+  // ケースA: 一覧PDF今回あり → listRows × zumenRows でマージしてS.casesに追加
+  // ケースB: 図面のみ投入   → 既存S.casesにマッチングしてhasFumen付与・補完
+  // ケースC: 図面のみ・S.casesも空 → 図面データをそのまま追加
   const mergedRows = [];
   const seen = new Set();
 
   if (listRows.length > 0) {
-    // ケースA：一覧PDF今回あり → listRows × zumenRows でマージ
+    // ケースA
     listRows.forEach(lr => {
       const zRow = zumenRows.find(zr =>
         zr.date === lr.date && Math.abs(zr.price - lr.price) <= 10000
@@ -1462,7 +1463,6 @@ async function parseCasePDFs(files) {
       const name = (zRow && zRow.name && zRow.name !== '※住所要確認')
         ? zRow.name : (lr.name || '');
       const hasFumen = !!(zRow && zRow.name && zRow.name !== '※住所要確認');
-      // 図面から建物面積・築年数を補完（一覧に値がない場合のみ）
       const buildArea = lr.buildArea || (zRow ? zRow.buildArea : 0) || 0;
       const age = lr.age || (zRow ? zRow.age : 0) || 0;
       const key = `${lr.date}_${lr.price}`;
@@ -1482,7 +1482,7 @@ async function parseCasePDFs(files) {
     addLog('ok', `一覧+図面マージ完了：${mergedRows.length}件`);
 
   } else if (zumenRows.length > 0 && S.cases.length > 0) {
-    // ケースB：図面のみ投入 → 既存S.casesにhasFumenを付与・補完
+    // ケースB: 図面のみ → 既存S.casesを直接更新
     let matched = 0;
     zumenRows.forEach(zr => {
       const existing = S.cases.find(r =>
@@ -1495,14 +1495,13 @@ async function parseCasePDFs(files) {
         if (!existing.age && zr.age) existing.age = zr.age;
         matched++;
       } else {
-        // 既存にない件は新規追加
         mergedRows.push({...zr, hasFumen: true});
       }
     });
     addLog('ok', `図面マッチング：${matched}件に「図」バッジ付与`);
 
   } else {
-    // ケースC：図面のみ・S.casesも空
+    // ケースC: 図面のみ・S.casesも空
     zumenRows.forEach(zr => {
       const key = `${zr.date}_${zr.price}`;
       if (!seen.has(key) && zr.price && zr.date) {
@@ -1517,7 +1516,7 @@ async function parseCasePDFs(files) {
   mergedRows.forEach(row => {
     if (!S.cases.find(r => r.date === row.date && Math.abs(r.price - row.price) <= 10000)) {
       const lu = row.landArea > 0 ? Math.round(row.price / row.landArea) : 0;
-      const tu = (row.landArea + row.buildArea) > 0 ? Math.round(row.price / (row.landArea + row.buildArea)) : 0;
+      const tu = (row.landArea + (row.buildArea||0)) > 0 ? Math.round(row.price / (row.landArea + (row.buildArea||0))) : 0;
       S.cases.push({...row, id: Date.now() + Math.random(), adopted: true, _lu: lu, _tu: tu});
       added++;
     }
@@ -2107,7 +2106,10 @@ function renderCaseTable() {
     if (needsAddrCheck || needsAreaCheck) tr.style.outline = '1px solid #f59e0b';
     tr.innerHTML = `
       <td><div class="cb-wrap"><input type="checkbox" ${row.adopted?'checked':''} onchange="toggleAdopt(${row.id},this.checked)"></div></td>
-      <td><input type="text" class="left" style="background:none;border:none;color:${needsAddrCheck?'#f59e0b':'var(--text2)'};font-size:12px;width:160px;padding:0;" value="${esc(row.name)}" onchange="updRow(${row.id},'name',this.value)" ${needsAddrCheck?'title="住所を手入力してください"':''}></td>
+      <td>
+        <input type="text" class="left" style="background:none;border:none;color:${needsAddrCheck?'#f59e0b':'var(--text2)'};font-size:12px;width:160px;padding:0;" value="${esc(row.name)}" onchange="updRow(${row.id},'name',this.value)" ${needsAddrCheck?'title="住所を手入力してください"':''}>
+        ${row.hasFumen ? '<span style="display:inline-block;margin-left:4px;background:#16a34a;color:#fff;font-size:10px;font-weight:bold;padding:1px 5px;border-radius:3px;vertical-align:middle;">図</span>' : ''}
+      </td>
       <td style="text-align:center;"><input type="text" style="background:none;border:none;color:var(--text);font-size:12px;text-align:center;width:88px;" value="${esc(row.date)}" onchange="updRow(${row.id},'date',this.value)"></td>
       <td onclick="promptArea(${row.id},'price')" style="cursor:pointer;" title="クリックして修正">${row.price?`<span style="border-bottom:1px dashed var(--text2);">${fmt(row.price)}円</span>`:'−'}</td>
       <td onclick="promptArea(${row.id},'land')" style="cursor:pointer;" title="クリックして修正">${row.landArea?`<span style="border-bottom:1px dashed var(--text2);">${row.landArea}㎡</span>`:`<span style="color:#f59e0b;font-size:11px;">図面参照▶手入力</span>`}</td>

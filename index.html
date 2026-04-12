@@ -2089,9 +2089,9 @@ function renderCaseTable() {
       <td><input type="text" class="left" style="background:none;border:none;color:${needsAddrCheck?'#f59e0b':'var(--text2)'};font-size:12px;width:160px;padding:0;" value="${esc(row.name)}" onchange="updRow(${row.id},'name',this.value)" ${needsAddrCheck?'title="住所を手入力してください"':''}></td>
       <td style="text-align:center;"><input type="text" style="background:none;border:none;color:var(--text);font-size:12px;text-align:center;width:88px;" value="${esc(row.date)}" onchange="updRow(${row.id},'date',this.value)"></td>
       <td>${row.price?fmt(row.price)+'円':'−'}</td>
-      <td>${row.landArea?row.landArea+'㎡':`<span style="color:#f59e0b;font-size:11px;cursor:pointer;" title="クリックして手入力" onclick="promptArea(${row.id})">図面参照▶手入力</span>`}</td>
-      <td>${row.buildArea?row.buildArea+'㎡':`<span style="color:#f59e0b;font-size:11px;cursor:pointer;" title="クリックして手入力" onclick="promptArea(${row.id},'build')">図面参照▶手入力</span>`}</td>
-      <td>${row.age?fmtAge(row.age):`<span style="color:#f59e0b;font-size:11px;cursor:pointer;" title="クリックして手入力" onclick="promptArea(${row.id},'age')">図面参照▶手入力</span>`}</td>
+      <td onclick="promptArea(${row.id},'land')" style="cursor:pointer;" title="クリックして修正">${row.landArea?`<span style="border-bottom:1px dashed var(--text2);">${row.landArea}㎡</span>`:`<span style="color:#f59e0b;font-size:11px;">図面参照▶手入力</span>`}</td>
+      <td onclick="promptArea(${row.id},'build')" style="cursor:pointer;" title="クリックして修正">${row.buildArea?`<span style="border-bottom:1px dashed var(--text2);">${row.buildArea}㎡</span>`:`<span style="color:#f59e0b;font-size:11px;">図面参照▶手入力</span>`}</td>
+      <td onclick="promptArea(${row.id},'age')" style="cursor:pointer;" title="クリックして修正">${row.age?`<span style="border-bottom:1px dashed var(--text2);">${fmtAge(row.age)}</span>`:`<span style="color:#f59e0b;font-size:11px;">図面参照▶手入力</span>`}</td>
       <td>${lu?fmt(lu)+'円<div class="sub2">/㎡</div>':'−'}</td>
       <td>${tu?fmt(tu)+'円<div class="sub2">/㎡</div>':'−'}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="delRow(${row.id})">削除</button></td>`;

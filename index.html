@@ -1448,26 +1448,27 @@ async function parseCasePDFs(files) {
   }
 
   // Step3: マージ
-  // 【ケースA】一覧PDF今回あり → listRows × zumenRows でマージしてS.casesに追加
-  // 【ケースB】一覧PDFなし・図面のみ → 既存S.casesにマッチングしてhasFumen付与、未マッチは新規追加
+  // 一覧PDFあり → 日付+価格で図面の住所を紐付け
+  // 一覧PDFなし → 図面のデータをそのまま使用
   const mergedRows = [];
   const seen = new Set();
 
   if (listRows.length > 0) {
-    // ケースA：一覧PDF今回読込あり
+    // ケースA：一覧PDF今回あり → listRows × zumenRows でマージ
     listRows.forEach(lr => {
-      const matchedZRows = zumenRows.filter(zr =>
-        zr.date === lr.date &&
-        Math.abs(zr.price - lr.price) <= 10000
-      );
-      const zRow = matchedZRows.length > 0 ? matchedZRows[0] : null;
+      const zRow = zumenRows.find(zr =>
+        zr.date === lr.date && Math.abs(zr.price - lr.price) <= 10000
+      ) || null;
       const name = (zRow && zRow.name && zRow.name !== '※住所要確認')
         ? zRow.name : (lr.name || '');
       const hasFumen = !!(zRow && zRow.name && zRow.name !== '※住所要確認');
-      const key = `${lr.date}_${lr.price}_${lr.landArea}`;
+      // 図面から建物面積・築年数を補完（一覧に値がない場合のみ）
+      const buildArea = lr.buildArea || (zRow ? zRow.buildArea : 0) || 0;
+      const age = lr.age || (zRow ? zRow.age : 0) || 0;
+      const key = `${lr.date}_${lr.price}`;
       if (!seen.has(key)) {
         seen.add(key);
-        mergedRows.push({...lr, name, hasFumen});
+        mergedRows.push({...lr, name, hasFumen, buildArea, age});
       }
     });
     // 図面にしかない件は図面のまま追加
@@ -1479,22 +1480,17 @@ async function parseCasePDFs(files) {
       }
     });
     addLog('ok', `一覧+図面マージ完了：${mergedRows.length}件`);
+
   } else if (zumenRows.length > 0 && S.cases.length > 0) {
-    // ケースB：図面のみ投入 → 既存S.casesにhasFumenを付与
+    // ケースB：図面のみ投入 → 既存S.casesにhasFumenを付与・補完
     let matched = 0;
     zumenRows.forEach(zr => {
-      // 既存S.casesと日付+価格でマッチング
       const existing = S.cases.find(r =>
-        r.date === zr.date &&
-        Math.abs(r.price - zr.price) <= 10000
+        r.date === zr.date && Math.abs(r.price - zr.price) <= 10000
       );
       if (existing) {
-        // 住所を図面で上書き・hasFumen付与
-        if (zr.name && zr.name !== '※住所要確認') {
-          existing.name = zr.name;
-        }
+        if (zr.name && zr.name !== '※住所要確認') existing.name = zr.name;
         existing.hasFumen = true;
-        // 建物面積・築年数も図面で補完（未入力の場合）
         if (!existing.buildArea && zr.buildArea) existing.buildArea = zr.buildArea;
         if (!existing.age && zr.age) existing.age = zr.age;
         matched++;
@@ -1503,9 +1499,10 @@ async function parseCasePDFs(files) {
         mergedRows.push({...zr, hasFumen: true});
       }
     });
-    addLog('ok', `図面マッチング完了：${matched}件に「図」バッジ付与`);
+    addLog('ok', `図面マッチング：${matched}件に「図」バッジ付与`);
+
   } else {
-    // 図面のみ・S.casesも空
+    // ケースC：図面のみ・S.casesも空
     zumenRows.forEach(zr => {
       const key = `${zr.date}_${zr.price}`;
       if (!seen.has(key) && zr.price && zr.date) {
@@ -1515,12 +1512,13 @@ async function parseCasePDFs(files) {
     });
   }
 
-  // S.casesに新規追加分を追記
+  // S.casesに新規追加分を追記（日付+価格で重複チェック）
   let added = 0;
   mergedRows.forEach(row => {
-    if (!S.cases.find(r => r.date === row.date && r.price === row.price && r.landArea === row.landArea)) {
-      const lu = row.landArea>0 ? Math.round(row.price/row.landArea) : 0;
-      S.cases.push({...row, id:Date.now()+Math.random(), adopted:true, _lu:lu, _tu:lu});
+    if (!S.cases.find(r => r.date === row.date && Math.abs(r.price - row.price) <= 10000)) {
+      const lu = row.landArea > 0 ? Math.round(row.price / row.landArea) : 0;
+      const tu = (row.landArea + row.buildArea) > 0 ? Math.round(row.price / (row.landArea + row.buildArea)) : 0;
+      S.cases.push({...row, id: Date.now() + Math.random(), adopted: true, _lu: lu, _tu: tu});
       added++;
     }
   });
@@ -2109,10 +2107,7 @@ function renderCaseTable() {
     if (needsAddrCheck || needsAreaCheck) tr.style.outline = '1px solid #f59e0b';
     tr.innerHTML = `
       <td><div class="cb-wrap"><input type="checkbox" ${row.adopted?'checked':''} onchange="toggleAdopt(${row.id},this.checked)"></div></td>
-      <td>
-        <input type="text" class="left" style="background:none;border:none;color:${needsAddrCheck?'#f59e0b':'var(--text2)'};font-size:12px;width:160px;padding:0;" value="${esc(row.name)}" onchange="updRow(${row.id},'name',this.value)" ${needsAddrCheck?'title="住所を手入力してください"':''}>
-        ${row.hasFumen ? '<div style="display:inline-block;margin-top:2px;background:#16a34a;color:#fff;font-size:10px;font-weight:bold;padding:1px 5px;border-radius:3px;letter-spacing:0.05em;">図</div>' : ''}
-      </td>
+      <td><input type="text" class="left" style="background:none;border:none;color:${needsAddrCheck?'#f59e0b':'var(--text2)'};font-size:12px;width:160px;padding:0;" value="${esc(row.name)}" onchange="updRow(${row.id},'name',this.value)" ${needsAddrCheck?'title="住所を手入力してください"':''}></td>
       <td style="text-align:center;"><input type="text" style="background:none;border:none;color:var(--text);font-size:12px;text-align:center;width:88px;" value="${esc(row.date)}" onchange="updRow(${row.id},'date',this.value)"></td>
       <td onclick="promptArea(${row.id},'price')" style="cursor:pointer;" title="クリックして修正">${row.price?`<span style="border-bottom:1px dashed var(--text2);">${fmt(row.price)}円</span>`:'−'}</td>
       <td onclick="promptArea(${row.id},'land')" style="cursor:pointer;" title="クリックして修正">${row.landArea?`<span style="border-bottom:1px dashed var(--text2);">${row.landArea}㎡</span>`:`<span style="color:#f59e0b;font-size:11px;">図面参照▶手入力</span>`}</td>
@@ -2671,8 +2666,7 @@ async function geocodeSubject(address) {
   for (const q of queries) {
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=3&countrycodes=jp&accept-language=ja`,
-        { headers: { 'User-Agent': 'HOUSE-MARKET-SateiTool/1.0' } }
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=3&countrycodes=jp&accept-language=ja`
       );
       const data = await res.json();
       if (data && data.length > 0) {
@@ -2711,8 +2705,7 @@ async function geocodeCases() {
     for (const q of queries) {
       try {
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=3&countrycodes=jp&accept-language=ja`,
-          { headers: { 'User-Agent': 'HOUSE-MARKET-SateiTool/1.0' } }
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=3&countrycodes=jp&accept-language=ja`
         );
         const data = await res.json();
         if (data && data.length > 0) {

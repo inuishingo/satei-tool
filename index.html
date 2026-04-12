@@ -2090,8 +2090,8 @@ function renderCaseTable() {
       <td style="text-align:center;"><input type="text" style="background:none;border:none;color:var(--text);font-size:12px;text-align:center;width:88px;" value="${esc(row.date)}" onchange="updRow(${row.id},'date',this.value)"></td>
       <td>${row.price?fmt(row.price)+'円':'−'}</td>
       <td>${row.landArea?row.landArea+'㎡':`<span style="color:#f59e0b;font-size:11px;cursor:pointer;" title="クリックして手入力" onclick="promptArea(${row.id})">図面参照▶手入力</span>`}</td>
-      <td>${row.buildArea||'−'}㎡</td>
-      <td>${fmtAge(row.age)}</td>
+      <td>${row.buildArea?row.buildArea+'㎡':`<span style="color:#f59e0b;font-size:11px;cursor:pointer;" title="クリックして手入力" onclick="promptArea(${row.id},'build')">図面参照▶手入力</span>`}</td>
+      <td>${row.age?fmtAge(row.age):`<span style="color:#f59e0b;font-size:11px;cursor:pointer;" title="クリックして手入力" onclick="promptArea(${row.id},'age')">図面参照▶手入力</span>`}</td>
       <td>${lu?fmt(lu)+'円<div class="sub2">/㎡</div>':'−'}</td>
       <td>${tu?fmt(tu)+'円<div class="sub2">/㎡</div>':'−'}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="delRow(${row.id})">削除</button></td>`;
@@ -2112,13 +2112,22 @@ function toggleAdopt(id,v) {
 }
 function updRow(id,f,v){const r=S.cases.find(r=>r.id===id);if(r)r[f]=v;}
 function delRow(id){S.cases=S.cases.filter(r=>r.id!==id);renderCaseTable();calcAvg();}
-function promptArea(id){
+function promptArea(id, type='land'){
   const r=S.cases.find(r=>r.id===id);
   if(!r) return;
-  const v=prompt(`土地面積を入力（㎡）\n${r.name} / ${r.date} / ${(r.price/10000).toLocaleString()}万円`,'');
+  const label = type==='land'?'土地面積（㎡）' : type==='build'?'建物面積（㎡）' : '築年数（年）';
+  const hint  = type==='age' ? '例：30（築30年の場合）' : '例：169.42';
+  const v=prompt(`${label}を入力\n${r.name} / ${r.date} / ${(r.price/10000).toLocaleString()}万円\n${hint}`,'');
   if(v===null) return;
   const n=parseFloat(v);
-  if(!isNaN(n)&&n>0){r.landArea=n;renderCaseTable();calcAvg();}
+  if(!isNaN(n)&&n>0){
+    if(type==='land')  r.landArea  = n;
+    if(type==='build') r.buildArea = n;
+    if(type==='age')   r.age       = Math.round(n);
+    r._lu = r.landArea>0 ? Math.round(r.price/r.landArea) : 0;
+    r._tu = (r.landArea+r.buildArea)>0 ? Math.round(r.price/(r.landArea+r.buildArea)) : 0;
+    renderCaseTable();calcAvg();
+  }
 }
 function checkAll(v){S.cases.forEach(r=>r.adopted=v);renderCaseTable();calcAvg();}
 function addManual(){

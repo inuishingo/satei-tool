@@ -1390,8 +1390,26 @@ async function parseCasePDFs(files) {
   const listFiles = [];
   const zumenFiles = [];
   for (const f of files) {
-    if (/図面|zmn_list|zumen/i.test(f.name)) zumenFiles.push(f);
-    else listFiles.push(f);
+    if (/図面|zmn_list|zumen/i.test(f.name)) {
+      zumenFiles.push(f);
+    } else {
+      // ファイル名で判定できない場合はテキストを先読みして分類
+      try {
+        const preText = await pdfToText(f);
+        // REINS一覧の特徴：物件番号（12桁以上）や「成約年月日」が複数回登場
+        const isListPdf = (preText.match(/\d{12,15}/g)||[]).length >= 3
+          || (preText.match(/成約年月日/g)||[]).length >= 2
+          || /売買物件検索|No\.\s*
+/.test(preText);
+        if (isListPdf) {
+          listFiles.push({...f, _preText: preText});
+        } else {
+          listFiles.push(f);
+        }
+      } catch(e) {
+        listFiles.push(f);
+      }
+    }
   }
 
   // Step1: 一覧PDFを先に処理（面積の精度が高い）
@@ -1706,35 +1724,38 @@ function parseCaseTextBasic(text, filename) {
 }
 
 // REINS一覧テキストから複数件を正規表現で抽出（APIなし）
-// 図面PDF（zmn_list）をAIで全ページ解析
-// 1ページ1物件。1ページずつAPIに投げて精度最大化
+// 図面PDF（zmn_list）をAIで解析
+// 最大3ページずつ一括送信して複数件を抽出（APIコール回数を削減）
 async function parseZumenWithAI(file) {
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({data:buf}).promise;
   const totalPages = pdf.numPages;
   const allRows = [];
+  const BATCH = 3; // 1回のAPIコールで送るページ数
 
-  // プログレスバー表示
   const progWrap = document.getElementById('cProg');
   const progBar = document.getElementById('cProgBar');
   if (progWrap) progWrap.style.display = 'block';
   if (progBar) progBar.style.width = '0%';
 
-  for (let p = 1; p <= totalPages; p++) {
-    addLog('info', `図面PDF解析中... ${p} / ${totalPages} ページ`);
-    if (progBar) progBar.style.width = `${Math.round((p-1)/totalPages*100)}%`;
+  for (let startP = 1; startP <= totalPages; startP += BATCH) {
+    const endP = Math.min(startP + BATCH - 1, totalPages);
+    addLog('info', `図面PDF解析中... ${startP}〜${endP} / ${totalPages} ページ`);
+    if (progBar) progBar.style.width = `${Math.round((startP-1)/totalPages*100)}%`;
 
-    // 1ページ画像生成（高解像度で精度アップ）
-    const pg = await pdf.getPage(p);
-    const vp = pg.getViewport({scale:1.8});
-    const canvas = document.createElement('canvas');
-    canvas.width = vp.width; canvas.height = vp.height;
-    await pg.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
-    const b64 = canvas.toDataURL('image/jpeg',0.88).split(',')[1];
-
-    const content = [
-      {type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}},
-      {type:'text',text:`不動産成約事例の図面PDF（1ページ・1物件）。このページから情報を抽出してください。
+    // 複数ページを画像化してまとめて送信
+    const content = [];
+    for (let p = startP; p <= endP; p++) {
+      const pg = await pdf.getPage(p);
+      const vp = pg.getViewport({scale:1.5});
+      const canvas = document.createElement('canvas');
+      canvas.width = vp.width; canvas.height = vp.height;
+      await pg.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
+      const b64 = canvas.toDataURL('image/jpeg',0.82).split(',')[1];
+      content.push({type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}});
+    }
+    content.push({type:'text',text:`不動産成約事例の図面PDF（${endP-startP+1}ページ、各ページ1物件）。
+各ページから成約情報を抽出してJSON配列で返してください。
 
 【所在地の抽出ルール（厳守）】
 優先順：
@@ -1742,50 +1763,41 @@ async function parseZumenWithAI(file) {
 2. 「所在地」欄に具体的な番地があれば使う（「下記参照」「右図参照」は使わない）
 3. 上記がなければ「XX市XX町」レベルまで（例：湖南市水戸町）
 
-絶対に使わないもの：
-・不動産会社の住所（守山市・草津市等、物件所在地と異なる市区町村）
-・バス停名・路線名・交通表記（「ライフタウン」「バス停」「駅」等を含む地名）
-・近隣施設名・学校名・公園名
+絶対に使わないもの：不動産会社の住所・バス停名・路線名・近隣施設名。
+所在地が不明・自信なしはnameを空文字""にする。
 
-所在地が特定できない・自信がない場合はnameを必ず空文字""にする（推測で埋めない）。
+【成約情報】各ページ最下部「成約価格：XX万円　成約年月日：令和X年X月X日」から取得。
+※土地面積は別途一覧PDFから取得するためlandAreaは常に0でよい。
 
-追加ルール：
-・縦書きや斜め書きの文字も読む
-・「湖南市水戸町」等が図面タイトル・大見出しに書いてある場合はそれを使う
-・「所在地」欄に「14番36・14番38」等の地番があれば「湖南市水戸町14番36・14番38」のように結合して使う
-・「南市水戸町」等の欠損は「湖南市水戸町」に補完してよい
-
-【成約情報】ページ最下部「成約価格：XX万円　成約年月日：令和X年X月X日」から取得。
-※土地面積は別途一覧PDFから取得するため不要。landAreaは常に0でよい。
-
-JSONのみ返答（1件）：
-{"name":"所在地（不明・自信なしは空文字）","date":"YYYY/MM/DD","price":円整数,"landArea":0,"buildArea":0,"age":0}
-万円→円変換(998万→9980000)。`}
-    ];
+JSON配列のみ返答（ページ数分の配列）：
+[{"name":"所在地","date":"YYYY/MM/DD","price":円整数,"landArea":0,"buildArea":延べ床面積㎡,"age":築年数}]
+万円→円変換(798万→7980000)。JSONのみ。`});
 
     try {
-      const raw = await callClaude([{role:'user',content}],'不動産成約事例抽出。JSONのみ返答。');
-      const jsonStr = raw.match(/\{[\s\S]*\}/)?.[0];
-      if (jsonStr) {
-        const d = JSON.parse(jsonStr);
-        if (d.price && d.date) {
-          const addr = normAddr(d.name) || '';
-          allRows.push({
-            name: addr || '※住所要確認',
-            date: d.date,
-            price: parseInt(d.price)||0,
-            landArea: parseFloat(d.landArea)||0,
-            buildArea: parseFloat(d.buildArea)||0,
-            age: safeAge(d.age),
-            _lu: d.landArea>0 ? Math.round(d.price/d.landArea) : 0,
-            _tu: (d.landArea+d.buildArea)>0 ? Math.round(d.price/(d.landArea+d.buildArea)) : 0,
-          });
-        }
+      const raw = await callClaude([{role:'user',content}],'不動産成約事例抽出。JSON配列のみ返答。');
+      const arrStr = raw.match(/\[[\s\S]*\]/)?.[0];
+      if (arrStr) {
+        const arr = JSON.parse(arrStr);
+        arr.forEach(d => {
+          if (d.price && d.date) {
+            const addr = normAddr(d.name) || '';
+            allRows.push({
+              name: addr || '※住所要確認',
+              date: d.date,
+              price: parseInt(d.price)||0,
+              landArea: parseFloat(d.landArea)||0,
+              buildArea: parseFloat(d.buildArea)||0,
+              age: safeAge(d.age),
+              _lu: 0,
+              _tu: 0,
+            });
+          }
+        });
       }
-    } catch(e) { console.warn(`図面${p}ページ解析エラー:`, e); }
+    } catch(e) { console.warn(`図面${startP}-${endP}ページ解析エラー:`, e); }
 
-    // ページ間インターバル（レートリミット対策）
-    if (p < totalPages) await new Promise(r => setTimeout(r, 2000));
+    // バッチ間インターバル（レートリミット対策）
+    if (endP < totalPages) await new Promise(r => setTimeout(r, 3000));
   }
 
   if (progBar) progBar.style.width = '100%';
@@ -1793,7 +1805,6 @@ JSONのみ返答（1件）：
 
   return allRows;
 }
-
 // 図面PDF（zmn_list）から成約事例を正規表現で抽出（フォールバック用）
 // 構造：1ページ1物件、各ページ末尾に「成約価格：XXX万円　成約年月日：令和X年X月X日」
 function parseZumenPdf(text, filename) {
@@ -2073,9 +2084,9 @@ function renderCaseTable() {
       <td><input type="text" class="left" style="background:none;border:none;color:${needsAddrCheck?'#f59e0b':'var(--text2)'};font-size:12px;width:160px;padding:0;" value="${esc(row.name)}" onchange="updRow(${row.id},'name',this.value)" ${needsAddrCheck?'title="住所を手入力してください"':''}></td>
       <td style="text-align:center;"><input type="text" style="background:none;border:none;color:var(--text);font-size:12px;text-align:center;width:88px;" value="${esc(row.date)}" onchange="updRow(${row.id},'date',this.value)"></td>
       <td>${row.price?fmt(row.price)+'円':'−'}</td>
-      <td>${row.landArea?row.landArea+'㎡':`<span style="color:#f59e0b;font-size:11px;cursor:pointer;" title="クリックして手入力" onclick="promptArea(${row.id},'land')">図面参照▶手入力</span>`}</td>
-      <td>${row.buildArea?row.buildArea+'㎡':`<span style="color:#f59e0b;font-size:11px;cursor:pointer;" title="クリックして手入力" onclick="promptArea(${row.id},'build')">図面参照▶手入力</span>`}</td>
-      <td>${row.age?fmtAge(row.age):`<span style="color:#f59e0b;font-size:11px;cursor:pointer;" title="クリックして手入力" onclick="promptArea(${row.id},'age')">図面参照▶手入力</span>`}</td>
+      <td>${row.landArea?row.landArea+'㎡':`<span style="color:#f59e0b;font-size:11px;cursor:pointer;" title="クリックして手入力" onclick="promptArea(${row.id})">図面参照▶手入力</span>`}</td>
+      <td>${row.buildArea||'−'}㎡</td>
+      <td>${fmtAge(row.age)}</td>
       <td>${lu?fmt(lu)+'円<div class="sub2">/㎡</div>':'−'}</td>
       <td>${tu?fmt(tu)+'円<div class="sub2">/㎡</div>':'−'}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="delRow(${row.id})">削除</button></td>`;
@@ -2096,22 +2107,13 @@ function toggleAdopt(id,v) {
 }
 function updRow(id,f,v){const r=S.cases.find(r=>r.id===id);if(r)r[f]=v;}
 function delRow(id){S.cases=S.cases.filter(r=>r.id!==id);renderCaseTable();calcAvg();}
-function promptArea(id, type){
+function promptArea(id){
   const r=S.cases.find(r=>r.id===id);
   if(!r) return;
-  const label = type==='land'?'土地面積（㎡）' : type==='build'?'建物面積（㎡）' : '築年数（年）';
-  const hint  = type==='age' ? '例：30（築30年の場合）' : '例：169.42';
-  const v=prompt(`${label}を入力\n${r.name} / ${r.date} / ${(r.price/10000).toLocaleString()}万円\n${hint}`,'');
+  const v=prompt(`土地面積を入力（㎡）\n${r.name} / ${r.date} / ${(r.price/10000).toLocaleString()}万円`,'');
   if(v===null) return;
   const n=parseFloat(v);
-  if(!isNaN(n)&&n>0){
-    if(type==='land')  r.landArea  = n;
-    if(type==='build') r.buildArea = n;
-    if(type==='age')   r.age       = Math.round(n);
-    r._lu = r.landArea>0 ? Math.round(r.price/r.landArea) : 0;
-    r._tu = (r.landArea+r.buildArea)>0 ? Math.round(r.price/(r.landArea+r.buildArea)) : 0;
-    renderCaseTable();calcAvg();
-  }
+  if(!isNaN(n)&&n>0){r.landArea=n;renderCaseTable();calcAvg();}
 }
 function checkAll(v){S.cases.forEach(r=>r.adopted=v);renderCaseTable();calcAvg();}
 function addManual(){

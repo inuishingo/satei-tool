@@ -660,6 +660,7 @@ tfoot .avg-row td{background:rgba(232,184,75,.07);font-weight:700;color:var(--ac
       <thead>
         <tr>
           <th style="width:46px;">採用</th>
+          <th style="width:32px;text-align:center;color:var(--text2);font-size:11px;">No.</th>
           <th onclick="sortTbl(1)">物件名・メモ <span id="si1">↕</span></th>
           <th onclick="sortTbl(2)">成約年月日 <span id="si2">↕</span></th>
           <th onclick="sortTbl(3)">成約価格 <span id="si3">↕</span></th>
@@ -1979,7 +1980,6 @@ function parseReinsListText(text, filename) {
       if (!price) continue;
 
       // 土地面積・建物面積：ブロック内の小数面積を順番に取得
-      // REINS一覧の構造: 土地面積㎡ → 建物面積㎡ の順で登場する
       const areaRx = /(\d{2,4}\.\d{1,2})/g;
       const allAreas = [];
       let am2;
@@ -1992,14 +1992,14 @@ function parseReinsListText(text, filename) {
 
       // 築年月：元号+年 → 築年数換算（成約年と異なるもの）
       let age = 0;
-      const nengoMap = {'令和':2018,'平成':1988,'昭和':1925};
+      const nengoMap2 = {'令和':2018,'平成':1988,'昭和':1925};
       const ageMatches = bs.match(/(令和|平成|昭和)(\d{1,2})年/g);
       if (ageMatches) {
         const seiY = parseInt(date.slice(0, 4));
         for (const m of ageMatches) {
           const g = m.match(/(令和|平成|昭和)(\d{1,2})年/);
           if (g) {
-            const y = (nengoMap[g[1]] || 2018) + parseInt(g[2]);
+            const y = (nengoMap2[g[1]] || 2018) + parseInt(g[2]);
             if (Math.abs(y - seiY) > 1) { age = Math.max(0, 2026 - y); break; }
           }
         }
@@ -2009,7 +2009,7 @@ function parseReinsListText(text, filename) {
       if (seen.has(key)) continue;
       seen.add(key);
 
-      // 所在地：正規化済みbsから都道府県+市区町村+町名を抽出
+      // 所在地抽出
       const addrM = bs.match(/([^\d]{2,6}[都道府県][^\d]{2,10}[市区町村][^\d]{0,12})/);
       let name = normAddr(addrM ? addrM[1] : bs.match(/([^\d]{2,8}[市区町村][^\d]{0,12})/)?.[1] || filename.replace('.pdf',''));
       name = name.replace(/(専任|売主|一般|専属|仲介).*/g, '').trim();
@@ -2086,6 +2086,7 @@ function renderCaseTable() {
   }
 
   tbody.innerHTML = '';
+  let pinNo = 0; // 地図ピン番号カウンター
   rows.forEach(row => {
     const lu = row.landArea>0 ? Math.round(row.price/row.landArea) : 0;
     const tu = (row.landArea+row.buildArea)>0 ? Math.round(row.price/(row.landArea+row.buildArea)) : 0;
@@ -2096,8 +2097,17 @@ function renderCaseTable() {
     const needsAddrCheck = row.name === '※住所要確認';
     const needsAreaCheck = !row.landArea || row.landArea === 0;
     if (needsAddrCheck || needsAreaCheck) tr.style.outline = '1px solid #f59e0b';
+
+    // 地図に表示される行（採用済み＋座標あり）のみ番号付与
+    const hasPin = row.adopted && row.lat && row.lng;
+    if (hasPin) pinNo++;
+    const noCell = hasPin
+      ? `<td style="text-align:center;font-size:11px;font-weight:bold;color:#a78bfa;">${pinNo}</td>`
+      : `<td></td>`;
+
     tr.innerHTML = `
       <td><div class="cb-wrap"><input type="checkbox" ${row.adopted?'checked':''} onchange="toggleAdopt(${row.id},this.checked)"></div></td>
+      ${noCell}
       <td>
         <input type="text" class="left" style="background:none;border:none;color:${needsAddrCheck?'#f59e0b':'var(--text2)'};font-size:12px;width:160px;padding:0;" value="${esc(row.name)}" onchange="updRow(${row.id},'name',this.value)" ${needsAddrCheck?'title="住所を手入力してください"':''}>
         ${row.hasFumen ? '<span style="display:inline-block;margin-left:4px;background:#16a34a;color:#fff;font-size:10px;font-weight:bold;padding:1px 5px;border-radius:3px;vertical-align:middle;">図</span>' : ''}
@@ -2704,6 +2714,8 @@ async function geocodeCases() {
     }
   }
   addLog('ok', `📍 座標取得完了（${success}/${targets.length}件）`);
+  // ジオコーディング完了後にリスト番号を更新
+  renderCaseTable();
   if (document.getElementById('tab3')?.classList.contains('active')) {
     initLeafletMap(); renderMapCaseTable();
   }

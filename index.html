@@ -1455,7 +1455,6 @@ async function parseCasePDFs(files) {
   const seen = new Set();
 
   if (listRows.length > 0) {
-    // ケースA：一覧PDF今回あり
     listRows.forEach(lr => {
       const zRow = zumenRows.find(zr => priceMatch(zr, lr)) || null;
       const name = (zRow && zRow.name && zRow.name !== '※住所要確認') ? zRow.name : (lr.name || '');
@@ -1472,7 +1471,6 @@ async function parseCasePDFs(files) {
     addLog('ok', `一覧+図面マージ完了：${mergedRows.length}件`);
 
   } else if (zumenRows.length > 0 && S.cases.length > 0) {
-    // ケースB：図面のみ → 既存S.casesを直接更新
     let matched = 0;
     zumenRows.forEach(zr => {
       const existing = S.cases.find(r => priceMatch(r, zr));
@@ -1487,14 +1485,12 @@ async function parseCasePDFs(files) {
     addLog('ok', `図面マッチング：${matched}件に「図」バッジ付与`);
 
   } else {
-    // ケースC：図面のみ・S.casesも空
     zumenRows.forEach(zr => {
       const key = `${zr.date}_${zr.price}`;
       if (!seen.has(key) && zr.price && zr.date) { seen.add(key); mergedRows.push({...zr, hasFumen: true}); }
     });
   }
 
-  // 新規追加分をS.casesへ
   let added = 0;
   mergedRows.forEach(row => {
     if (!S.cases.find(r => priceMatch(r, row))) {
@@ -1505,8 +1501,6 @@ async function parseCasePDFs(files) {
     }
   });
   if (added > 0) addLog('ok', `成約事例 ${added}件追加`);
-
-  // 成約日の新しい順にソート
   S.cases.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   renderCaseTable(); calcAvg();
   geocodeCases();
@@ -1984,13 +1978,31 @@ function parseReinsListText(text, filename) {
       }
       if (!price) continue;
 
-      // 土地面積：2桁以上.小数（50〜2000）
+      // 土地面積・建物面積：ブロック内の小数面積を順番に取得
+      // REINS一覧の構造: 土地面積㎡ → 建物面積㎡ の順で登場する
       const areaRx = /(\d{2,4}\.\d{1,2})/g;
-      let landArea = 0;
+      const allAreas = [];
       let am2;
       while ((am2 = areaRx.exec(bs)) !== null) {
         const v = parseFloat(am2[1]);
-        if (v >= 50 && v <= 2000) { landArea = v; break; }
+        if (v >= 30 && v <= 2000) allAreas.push(v);
+      }
+      const landArea = allAreas[0] || 0;
+      const buildArea = allAreas.length > 1 ? allAreas[1] : 0;
+
+      // 築年月：元号+年 → 築年数換算（成約年と異なるもの）
+      let age = 0;
+      const nengoMap = {'令和':2018,'平成':1988,'昭和':1925};
+      const ageMatches = bs.match(/(令和|平成|昭和)(\d{1,2})年/g);
+      if (ageMatches) {
+        const seiY = parseInt(date.slice(0, 4));
+        for (const m of ageMatches) {
+          const g = m.match(/(令和|平成|昭和)(\d{1,2})年/);
+          if (g) {
+            const y = (nengoMap[g[1]] || 2018) + parseInt(g[2]);
+            if (Math.abs(y - seiY) > 1) { age = Math.max(0, 2026 - y); break; }
+          }
+        }
       }
 
       const key = `${date}_${price}_${landArea}`;
@@ -2000,19 +2012,11 @@ function parseReinsListText(text, filename) {
       // 所在地：正規化済みbsから都道府県+市区町村+町名を抽出
       const addrM = bs.match(/([^\d]{2,6}[都道府県][^\d]{2,10}[市区町村][^\d]{0,12})/);
       let name = normAddr(addrM ? addrM[1] : bs.match(/([^\d]{2,8}[市区町村][^\d]{0,12})/)?.[1] || filename.replace('.pdf',''));
-      // 取引態様・余分な文字を除去
       name = name.replace(/(専任|売主|一般|専属|仲介).*/g, '').trim();
 
-      rows.push({
-        name,
-        date,
-        price,
-        landArea,
-        buildArea: 0,
-        age: 0,
-        _lu: landArea > 0 ? Math.round(price / landArea) : 0,
-        _tu: landArea > 0 ? Math.round(price / landArea) : 0,
-      });
+      const lu = landArea > 0 ? Math.round(price / landArea) : 0;
+      const tu = (landArea + buildArea) > 0 ? Math.round(price / (landArea + buildArea)) : lu;
+      rows.push({ name, date, price, landArea, buildArea, age, _lu: lu, _tu: tu });
     }
   }
 
@@ -2041,21 +2045,23 @@ function parseReinsListText(text, filename) {
     let a2;
     while ((a2 = areaRx2.exec(text)) !== null) {
       const v = parseFloat(a2[1]);
-      if (v >= 50 && v <= 2000) areas2.push(v);
+      if (v >= 30 && v <= 2000) areas2.push(v);
     }
     const count = Math.min(prices2.length, dates2.length);
     let baseName = filename.replace('.pdf','');
     const cityNames = ['湖南市','甲賀市','草津市','栗東市','守山市','野洲市','近江八幡市','東近江市','彦根市','長浜市','大津市'];
     for (const c of cityNames) { if (text.includes(c)) { baseName = c; break; } }
     for (let i = 0; i < count; i++) {
-      const la = areas2[i] || 0;
+      const la = areas2[i*2] || 0;
+      const ba = areas2[i*2+1] || 0;
       const price = prices2[i];
       const date = dates2[i];
       const key = `${date}_${price}_${la}`;
       if (!seen.has(key)) {
         seen.add(key);
-        rows.push({ name: baseName, date, price, landArea: la, buildArea: 0, age: 0,
-          _lu: la>0?Math.round(price/la):0, _tu: la>0?Math.round(price/la):0 });
+        const lu = la>0?Math.round(price/la):0;
+        const tu = (la+ba)>0?Math.round(price/(la+ba)):lu;
+        rows.push({ name: baseName, date, price, landArea: la, buildArea: ba, age: 0, _lu: lu, _tu: tu });
       }
     }
   }
@@ -2699,8 +2705,7 @@ async function geocodeCases() {
   }
   addLog('ok', `📍 座標取得完了（${success}/${targets.length}件）`);
   if (document.getElementById('tab3')?.classList.contains('active')) {
-    initLeafletMap();
-    renderMapCaseTable();
+    initLeafletMap(); renderMapCaseTable();
   }
 }
 

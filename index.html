@@ -2088,7 +2088,7 @@ function renderCaseTable() {
       <td><div class="cb-wrap"><input type="checkbox" ${row.adopted?'checked':''} onchange="toggleAdopt(${row.id},this.checked)"></div></td>
       <td><input type="text" class="left" style="background:none;border:none;color:${needsAddrCheck?'#f59e0b':'var(--text2)'};font-size:12px;width:160px;padding:0;" value="${esc(row.name)}" onchange="updRow(${row.id},'name',this.value)" ${needsAddrCheck?'title="住所を手入力してください"':''}></td>
       <td style="text-align:center;"><input type="text" style="background:none;border:none;color:var(--text);font-size:12px;text-align:center;width:88px;" value="${esc(row.date)}" onchange="updRow(${row.id},'date',this.value)"></td>
-      <td>${row.price?fmt(row.price)+'円':'−'}</td>
+      <td onclick="promptArea(${row.id},'price')" style="cursor:pointer;" title="クリックして修正">${row.price?`<span style="border-bottom:1px dashed var(--text2);">${fmt(row.price)}円</span>`:'−'}</td>
       <td onclick="promptArea(${row.id},'land')" style="cursor:pointer;" title="クリックして修正">${row.landArea?`<span style="border-bottom:1px dashed var(--text2);">${row.landArea}㎡</span>`:`<span style="color:#f59e0b;font-size:11px;">図面参照▶手入力</span>`}</td>
       <td onclick="promptArea(${row.id},'build')" style="cursor:pointer;" title="クリックして修正">${row.buildArea?`<span style="border-bottom:1px dashed var(--text2);">${row.buildArea}㎡</span>`:`<span style="color:#f59e0b;font-size:11px;">図面参照▶手入力</span>`}</td>
       <td onclick="promptArea(${row.id},'age')" style="cursor:pointer;" title="クリックして修正">${row.age?`<span style="border-bottom:1px dashed var(--text2);">${fmtAge(row.age)}</span>`:`<span style="color:#f59e0b;font-size:11px;">図面参照▶手入力</span>`}</td>
@@ -2115,15 +2115,16 @@ function delRow(id){S.cases=S.cases.filter(r=>r.id!==id);renderCaseTable();calcA
 function promptArea(id, type='land'){
   const r=S.cases.find(r=>r.id===id);
   if(!r) return;
-  const label = type==='land'?'土地面積（㎡）' : type==='build'?'建物面積（㎡）' : '築年数（年）';
-  const hint  = type==='age' ? '例：30（築30年の場合）' : '例：169.42';
-  const v=prompt(`${label}を入力\n${r.name} / ${r.date} / ${(r.price/10000).toLocaleString()}万円\n${hint}`,'');
+  const label = type==='land'?'土地面積（㎡）' : type==='build'?'建物面積（㎡）' : type==='age'?'築年数（年）' : '成約価格（万円）';
+  const hint  = type==='age' ? '例：30（築30年の場合）' : type==='price' ? '例：880（880万円の場合）' : '例：169.42';
+  const v=prompt(`${label}を入力\n${r.name} / ${r.date}\n${hint}`,'');
   if(v===null) return;
   const n=parseFloat(v);
   if(!isNaN(n)&&n>0){
     if(type==='land')  r.landArea  = n;
     if(type==='build') r.buildArea = n;
     if(type==='age')   r.age       = Math.round(n);
+    if(type==='price') r.price     = Math.round(n * 10000);
     r._lu = r.landArea>0 ? Math.round(r.price/r.landArea) : 0;
     r._tu = (r.landArea+r.buildArea)>0 ? Math.round(r.price/(r.landArea+r.buildArea)) : 0;
     renderCaseTable();calcAvg();

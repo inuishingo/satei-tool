@@ -1471,7 +1471,6 @@ async function parseCasePDFs(files) {
         mergedRows.push({...lr, name, hasFumen, buildArea, age});
       }
     });
-    // 図面にしかない件は図面のまま追加
     zumenRows.forEach(zr => {
       const key = `${zr.date}_${zr.price}`;
       if (!seen.has(key) && zr.price && zr.date) {
@@ -1998,13 +1997,37 @@ function parseReinsListText(text, filename) {
       }
       if (!price) continue;
 
-      // 土地面積：2桁以上.小数（50〜2000）
+      // 土地面積・建物面積：ブロック内の小数面積を順番に取得
+      // REINS一覧の構造: 土地面積㎡ → 建物面積㎡ の順で登場する
       const areaRx = /(\d{2,4}\.\d{1,2})/g;
-      let landArea = 0;
+      const allAreas = [];
       let am2;
       while ((am2 = areaRx.exec(bs)) !== null) {
         const v = parseFloat(am2[1]);
-        if (v >= 50 && v <= 2000) { landArea = v; break; }
+        if (v >= 30 && v <= 2000) allAreas.push(v);
+      }
+      const landArea = allAreas[0] || 0;
+      // 2番目の面積が建物面積（土地面積と異なり30㎡以上）
+      const buildArea = allAreas.length > 1 ? allAreas[1] : 0;
+
+      // 築年月：元号+年 → 築年数換算
+      let age = 0;
+      const nengoMap = {'令和':2018,'平成':1988,'昭和':1925};
+      const ageM = bs.match(/(令和|平成|昭和)(\d{1,2})年/g);
+      if (ageM) {
+        // 成約年月日以外の年号 → 築年として使用（最初にマッチしたもの）
+        for (const m of ageM) {
+          const g = m.match(/(令和|平成|昭和)(\d{1,2})年/);
+          if (g) {
+            const y = (nengoMap[g[1]] || 2018) + parseInt(g[2]);
+            // 成約年（dateから取得）と異なればok（築年候補）
+            const seiY = parseInt(date.slice(0,4));
+            if (Math.abs(y - seiY) > 1) { // 成約年と1年以上差があれば築年
+              age = Math.max(0, 2026 - y);
+              break;
+            }
+          }
+        }
       }
 
       const key = `${date}_${price}_${landArea}`;
@@ -2017,15 +2040,17 @@ function parseReinsListText(text, filename) {
       // 取引態様・余分な文字を除去
       name = name.replace(/(専任|売主|一般|専属|仲介).*/g, '').trim();
 
+      const lu = landArea > 0 ? Math.round(price / landArea) : 0;
+      const tu = (landArea + buildArea) > 0 ? Math.round(price / (landArea + buildArea)) : lu;
       rows.push({
         name,
         date,
         price,
         landArea,
-        buildArea: 0,
-        age: 0,
-        _lu: landArea > 0 ? Math.round(price / landArea) : 0,
-        _tu: landArea > 0 ? Math.round(price / landArea) : 0,
+        buildArea,
+        age,
+        _lu: lu,
+        _tu: tu,
       });
     }
   }
@@ -2057,19 +2082,30 @@ function parseReinsListText(text, filename) {
       const v = parseFloat(a2[1]);
       if (v >= 50 && v <= 2000) areas2.push(v);
     }
+    // 建物面積リスト（土地面積と分けて2番目の面積を使う）
+    const buildAreas2 = [];
+    const baRx2 = /(\d{2,4}\.\d{1,2})/g;
+    let ba2;
+    while ((ba2 = baRx2.exec(text)) !== null) {
+      const v = parseFloat(ba2[1]);
+      if (v >= 30 && v <= 2000) buildAreas2.push(v);
+    }
     const count = Math.min(prices2.length, dates2.length);
     let baseName = filename.replace('.pdf','');
     const cityNames = ['湖南市','甲賀市','草津市','栗東市','守山市','野洲市','近江八幡市','東近江市','彦根市','長浜市','大津市'];
     for (const c of cityNames) { if (text.includes(c)) { baseName = c; break; } }
     for (let i = 0; i < count; i++) {
-      const la = areas2[i] || 0;
+      const la = areas2[i*2] || 0;
+      const ba = areas2[i*2+1] || 0;
       const price = prices2[i];
       const date = dates2[i];
       const key = `${date}_${price}_${la}`;
       if (!seen.has(key)) {
         seen.add(key);
-        rows.push({ name: baseName, date, price, landArea: la, buildArea: 0, age: 0,
-          _lu: la>0?Math.round(price/la):0, _tu: la>0?Math.round(price/la):0 });
+        const lu = la>0?Math.round(price/la):0;
+        const tu = (la+ba)>0?Math.round(price/(la+ba)):lu;
+        rows.push({ name: baseName, date, price, landArea: la, buildArea: ba, age: 0,
+          _lu: lu, _tu: tu });
       }
     }
   }

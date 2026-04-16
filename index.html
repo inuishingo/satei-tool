@@ -897,10 +897,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const gmapsEl = document.getElementById('gmapsKey');
     if (gmapsEl) gmapsEl.value = savedGMapsKey;
   }
-  updateGMapsStatus();
   const apiBar = document.getElementById('apiBar');
   if (apiBar) apiBar.style.display = 'flex';
   updateApiStatus();
+  updateGMapsStatus();
   renderEmpty();
   setDash();
 });
@@ -910,6 +910,16 @@ function saveKey() {
   S.apiKey = document.getElementById('apiKey').value.trim();
   localStorage.setItem('hm_apikey', S.apiKey);
   updateApiStatus();
+}
+function updateApiStatus() {
+  const el = document.getElementById('apiStatus');
+  if (S.apiKey.startsWith('sk-ant-') && S.apiKey.length > 20) {
+    el.textContent = '✅ 設定済 - スキャンPDF解析有効';
+    el.style.color = 'var(--green)';
+  } else {
+    el.textContent = '未設定（手入力でも査定可能）';
+    el.style.color = 'var(--text2)';
+  }
 }
 
 // Google Maps APIキー
@@ -926,16 +936,6 @@ function updateGMapsStatus() {
     el.style.color = 'var(--green)';
   } else {
     el.textContent = '未設定（地図ピン無効）';
-    el.style.color = 'var(--text2)';
-  }
-}
-function updateApiStatus() {
-  const el = document.getElementById('apiStatus');
-  if (S.apiKey.startsWith('sk-ant-') && S.apiKey.length > 20) {
-    el.textContent = '✅ 設定済 - スキャンPDF解析有効';
-    el.style.color = 'var(--green)';
-  } else {
-    el.textContent = '未設定（手入力でも査定可能）';
     el.style.color = 'var(--text2)';
   }
 }
@@ -2123,7 +2123,8 @@ function renderCaseTable() {
     const needsAddrCheck = row.name === '※住所要確認';
     const needsAreaCheck = !row.landArea || row.landArea === 0;
     if (needsAddrCheck || needsAreaCheck) tr.style.outline = '1px solid #f59e0b';
-    const hasPin = row.adopted && row.lat && row.lng;
+    // 番地ある住所＋採用＋座標ありの行のみ番号付与
+    const hasPin = row.adopted && row.lat && row.lng && hasBanchi(row.name);
     if (hasPin) pinNo++;
     const noCell = hasPin
       ? `<td style="text-align:center;font-size:11px;font-weight:bold;color:#a78bfa;">${pinNo}</td>`
@@ -2680,7 +2681,6 @@ const ALL_CASES = [
 
 const SUBJECT = { name:'【対象物件】', lat:35.1266654, lng:136.9298696, price:'' };
 
-// 住所からジオコーディング（Nominatim）してSUBJECT座標を更新
 // Google Geocoding APIで住所→座標変換（共通関数）
 async function geocodeAddress(address) {
   if (!address || !GOOGLE_MAPS_KEY) return null;
@@ -2720,8 +2720,14 @@ async function geocodeSubject(address) {
   return false;
 }
 
+// 番地レベルの住所かどうか判定（数字を含む）
+function hasBanchi(name) {
+  return name && /[0-9０-９]/.test(name) && name !== '※住所要確認';
+}
+
+// 成約事例の住所から座標を取得してS.casesに反映（番地ある住所のみ）
 async function geocodeCases() {
-  const targets = S.cases.filter(c => !c.lat && c.name && c.name.length > 3 && c.name !== '※住所要確認');
+  const targets = S.cases.filter(c => !c.lat && hasBanchi(c.name));
   if (!targets.length) return;
   addLog('ok', `📍 近隣事例 ${targets.length}件の座標を取得中...`);
   let success = 0;
